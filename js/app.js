@@ -1,31 +1,14 @@
 let FINAL_DATA = [];
-let CURRENT_MP = "Amazon";
+let CURRENT_MP = "";
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
 
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("Starting app...");
-
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
 
-  console.log("TOTAL ROWS:", FINAL_DATA.length);
-
-  // DEBUG: log unique MP values
-  const mpSet = new Set(FINAL_DATA.map(r => (r.mp || "").toString().trim()));
-  console.log("UNIQUE MP VALUES:", [...mpSet]);
-
   renderSummary();
-  renderTable("Amazon");
-
-  document.querySelectorAll(".tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      CURRENT_PAGE = 1;
-      renderTable(tab.dataset.mp);
-    });
-  });
+  buildMPTabs();
 });
 
 /* ================= SUMMARY ================= */
@@ -43,19 +26,46 @@ function renderSummary() {
   `;
 }
 
+/* ================= MP TABS ================= */
+
+function buildMPTabs() {
+  const tabContainer = document.getElementById("mp-tabs");
+  tabContainer.innerHTML = "";
+
+  const uniqueMPs = [...new Set(FINAL_DATA.map(r => r.mp))].filter(Boolean);
+
+  if (!uniqueMPs.length) {
+    tabContainer.innerHTML = `<span style="color:#64748b">No MP found</span>`;
+    return;
+  }
+
+  uniqueMPs.forEach((mp, index) => {
+    const btn = document.createElement("button");
+    btn.className = "tab" + (index === 0 ? " active" : "");
+    btn.innerText = mp;
+
+    btn.onclick = () => {
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      btn.classList.add("active");
+      CURRENT_PAGE = 1;
+      renderTable(mp);
+    };
+
+    tabContainer.appendChild(btn);
+
+    if (index === 0) {
+      CURRENT_MP = mp;
+      renderTable(mp);
+    }
+  });
+}
+
 /* ================= TABLE ================= */
 
 function renderTable(mp) {
   CURRENT_MP = mp;
 
-  // 🔥 TEMPORARY: DO NOT FILTER BY MP TEXT
-  // This guarantees rows render
-  const rows = FINAL_DATA.filter(r =>
-    r.shipmentQty > 0 ||
-    r.recallQty > 0 ||
-    r.fcStockQty > 0
-  );
-
+  const rows = FINAL_DATA.filter(r => r.mp === mp);
   const visibleRows = rows.slice(0, CURRENT_PAGE * PAGE_SIZE);
 
   document.getElementById("table-title").innerText =
@@ -63,7 +73,7 @@ function renderTable(mp) {
 
   if (!rows.length) {
     document.getElementById("table-container").innerHTML =
-      `<div style="padding:24px;color:#64748b">No rows to display</div>`;
+      `<div style="padding:24px;color:#64748b">No data</div>`;
     return;
   }
 
@@ -71,7 +81,6 @@ function renderTable(mp) {
     <table>
       <thead>
         <tr>
-          <th>MP</th>
           <th>Style</th>
           <th>SKU</th>
           <th>FC</th>
@@ -94,7 +103,6 @@ function renderTable(mp) {
 
     html += `
       <tr>
-        <td>${r.mp || "-"}</td>
         <td>${r.styleId}</td>
         <td>${r.sku}</td>
         <td>${r.warehouseId}</td>
