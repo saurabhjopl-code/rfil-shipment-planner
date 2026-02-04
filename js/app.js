@@ -1,5 +1,5 @@
 /* =========================================================
-   app.js – FINAL STABLE UI RENDERER (FULL REPLACE)
+   app.js – CLEAN ORCHESTRATOR (FULL REPLACE)
    ========================================================= */
 
 let FINAL_DATA = [];
@@ -65,32 +65,22 @@ function buildMPTabs() {
   });
 }
 
-/* ================= MP SUMMARY ================= */
+/* ================= FC SUMMARY (OPTIONAL) ================= */
 
-function ensureMPSummaryContainer() {
-  let el = document.getElementById("mp-summary");
-  if (!el) {
-    const card = document.createElement("section");
-    card.className = "card";
-    card.style.marginBottom = "16px";
-    card.innerHTML = `
-      <div class="card-header">
-        <h2>MP Summary (FC-wise)</h2>
-      </div>
-      <div class="table-wrapper" id="mp-summary"></div>
-    `;
-    const mainTableCard = document.querySelector(".card");
-    mainTableCard.parentNode.insertBefore(card, mainTableCard);
-    el = document.getElementById("mp-summary");
+function toggleFCSummary() {
+  const card = document.getElementById("fc-summary-card");
+  if (card.style.display === "none") {
+    card.style.display = "block";
+    renderMPSummary(CURRENT_MP);
+  } else {
+    card.style.display = "none";
   }
-  return el;
 }
 
 function renderMPSummary(mp) {
-  const container = ensureMPSummaryContainer();
   const rows = FINAL_DATA.filter(r => r.mp === mp);
-
   const map = {};
+
   rows.forEach(r => {
     if (!map[r.warehouseId]) {
       map[r.warehouseId] = { sku: new Set(), ship: 0, recall: 0 };
@@ -109,8 +99,7 @@ function renderMPSummary(mp) {
           <th>Shipment Qty</th>
           <th>Recall Qty</th>
         </tr>
-      </thead>
-      <tbody>
+      </thead><tbody>
   `;
 
   Object.entries(map).forEach(([fc, v]) => {
@@ -120,19 +109,17 @@ function renderMPSummary(mp) {
         <td>${v.sku.size}</td>
         <td>${v.ship}</td>
         <td>${v.recall}</td>
-      </tr>
-    `;
+      </tr>`;
   });
 
   html += "</tbody></table>";
-  container.innerHTML = html;
+  document.getElementById("mp-summary").innerHTML = html;
 }
 
 /* ================= MAIN TABLE ================= */
 
 function renderTable(mp) {
   CURRENT_MP = mp;
-  renderMPSummary(mp);
 
   const rows = FINAL_DATA.filter(r => r.mp === mp);
   const visible = rows.slice(0, CURRENT_PAGE * PAGE_SIZE);
@@ -155,8 +142,7 @@ function renderTable(mp) {
           <th>Action</th>
           <th>Remarks</th>
         </tr>
-      </thead>
-      <tbody>
+      </thead><tbody>
   `;
 
   visible.forEach(r => {
@@ -165,31 +151,4 @@ function renderTable(mp) {
         <td>${r.styleId || "-"}</td>
         <td>${r.sku || "-"}</td>
         <td>${r.warehouseId || "-"}</td>
-        <td>${fmt(r.drr)}</td>
-        <td>${r.fcStockQty ?? "-"}</td>
-        <td>${fmt(r.stockCover,1)}</td>
-        <td>${r.shipmentQty || 0}</td>
-        <td>${r.recallQty || 0}</td>
-        <td>${r.actionType}</td>
-        <td style="max-width:280px">${r.remark || ""}</td>
-      </tr>
-    `;
-  });
-
-  html += "</tbody></table>";
-
-  if (visible.length < rows.length) {
-    html += `
-      <div style="text-align:center;padding:12px">
-        <button class="tab" onclick="loadMore()">Load more</button>
-      </div>
-    `;
-  }
-
-  document.getElementById("table-container").innerHTML = html;
-}
-
-function loadMore() {
-  CURRENT_PAGE++;
-  renderTable(CURRENT_MP);
-}
+        <td>${fmt(r.drr)}</t
