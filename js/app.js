@@ -1,35 +1,42 @@
 let FINAL_DATA = [];
 let CURRENT_MP = "Amazon";
+const PAGE_SIZE = 200;
 
 /* ============================
-   MP NORMALIZATION FOR UI
+   STRONG MP NORMALIZATION
    ============================ */
 function normalizeMP(mp) {
   if (!mp) return "";
-  if (mp.toLowerCase().includes("amazon")) return "Amazon";
-  if (mp.toLowerCase().includes("flipkart")) return "Flipkart";
-  if (mp.toLowerCase().includes("myntra")) return "Myntra";
-  return mp;
+  const v = mp.toString().trim().toUpperCase();
+  if (v.includes("AMAZON")) return "Amazon";
+  if (v.includes("FLIPKART")) return "Flipkart";
+  if (v.includes("MYNTRA")) return "Myntra";
+  return "";
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  console.log("Loading data…");
+
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
 
-  // add UI MP field
+  // attach UI MP safely
   FINAL_DATA.forEach(r => {
     r.uiMP = normalizeMP(r.mp);
   });
+
+  console.log("Total rows:", FINAL_DATA.length);
+  console.log(
+    "Amazon rows:",
+    FINAL_DATA.filter(r => r.uiMP === "Amazon").length
+  );
 
   renderSummary();
   renderTable("Amazon");
 
   document.querySelectorAll(".tab").forEach(tab => {
     tab.addEventListener("click", () => {
-      document
-        .querySelectorAll(".tab")
-        .forEach(t => t.classList.remove("active"));
-
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
       renderTable(tab.dataset.mp);
     });
@@ -44,37 +51,27 @@ function renderSummary() {
   const closed = FINAL_DATA.filter(r => r.isClosedStyle).length;
 
   document.getElementById("summary").innerHTML = `
-    <div class="summary-card">
-      <h3>Total Rows</h3>
-      <p>${FINAL_DATA.length}</p>
-    </div>
-    <div class="summary-card">
-      <h3>Shipment Qty</h3>
-      <p>${ship}</p>
-    </div>
-    <div class="summary-card">
-      <h3>Recall Qty</h3>
-      <p>${recall}</p>
-    </div>
-    <div class="summary-card">
-      <h3>Closed Rows</h3>
-      <p>${closed}</p>
-    </div>
+    <div class="summary-card"><h3>Total Rows</h3><p>${FINAL_DATA.length}</p></div>
+    <div class="summary-card"><h3>Shipment Qty</h3><p>${ship}</p></div>
+    <div class="summary-card"><h3>Recall Qty</h3><p>${recall}</p></div>
+    <div class="summary-card"><h3>Closed Rows</h3><p>${closed}</p></div>
   `;
 }
 
 /* ================= TABLE ================= */
 
 function renderTable(mp) {
-  document.getElementById(
-    "table-title"
-  ).innerText = `${mp} – FC Planning`;
+  CURRENT_MP = mp;
 
   const rows = FINAL_DATA.filter(r => r.uiMP === mp);
+  const visibleRows = rows.slice(0, PAGE_SIZE);
+
+  document.getElementById("table-title").innerText =
+    `${mp} – FC Planning (${rows.length} rows, showing ${visibleRows.length})`;
 
   if (!rows.length) {
     document.getElementById("table-container").innerHTML =
-      `<div style="padding:20px;color:#64748b">No data available</div>`;
+      `<div style="padding:24px;color:#64748b">No data for ${mp}</div>`;
     return;
   }
 
@@ -96,7 +93,7 @@ function renderTable(mp) {
       <tbody>
   `;
 
-  rows.forEach(r => {
+  visibleRows.forEach(r => {
     let tagClass = "tag-none";
     if (r.actionType === "SHIP") tagClass = "tag-ship";
     if (r.actionType === "RECALL") tagClass = "tag-recall";
@@ -112,11 +109,7 @@ function renderTable(mp) {
         <td>${r.stockCover === Infinity ? "∞" : r.stockCover.toFixed(1)}</td>
         <td>${r.shipmentQty || 0}</td>
         <td>${r.recallQty || 0}</td>
-        <td>
-          <span class="tag ${tagClass}">
-            ${r.actionType}
-          </span>
-        </td>
+        <td><span class="tag ${tagClass}">${r.actionType}</span></td>
       </tr>
     `;
   });
