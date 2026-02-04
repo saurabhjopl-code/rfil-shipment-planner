@@ -1,9 +1,7 @@
 /* =========================================================
-   calc.js – V1.3 (FULL REPLACE)
-   Adds SELLER → FC logic (Rebalance + Bootstrap)
+   calc.js – V1.3.1 (FULL REPLACE HOTFIX)
+   Fixes allocation break while keeping SELLER logic
    ========================================================= */
-
-/* ---------- CONFIG ---------- */
 
 const FC_ALLOCATION_RATIO = 0.40;
 
@@ -13,14 +11,10 @@ const BEST_FC_BY_MP = {
   "Flipkart": ["MALUR","KOLKATA","SANPKA","HYDERABAD","BHIWANDI"]
 };
 
-/* ---------- MAIN ENTRY ---------- */
-
 function runCalculations(rows) {
 
-  /* deep clone */
   const data = rows.map(r => ({ ...r }));
 
-  /* init defaults */
   data.forEach(r => {
     r.shipmentQty = 0;
     r.recallQty = 0;
@@ -28,178 +22,164 @@ function runCalculations(rows) {
     r.shipmentSource = "";
   });
 
-  /* ===============================
-     STEP 1: GROUP HELPERS
-     =============================== */
+  const groups = {};
+  const k = (m,s,sku)=>`${m}||${s}||${sku}`;
 
-  const byKey = {};
-  const key = (mp, style, sku) => `${mp}||${style}||${sku}`;
-
-  data.forEach(r => {
-    const k = key(r.mp, r.styleId, r.sku);
-    byKey[k] ??= [];
-    byKey[k].push(r);
+  data.forEach(r=>{
+    groups[k(r.mp,r.styleId,r.sku)] ??= [];
+    groups[k(r.mp,r.styleId,r.sku)].push(r);
   });
 
-  /* ===============================
-     STEP 2: PROCESS EACH SKU GROUP
-     =============================== */
+  Object.values(groups).forEach(group => {
 
-  Object.values(byKey).forEach(group => {
+    const ref = group[0];
 
-    const sample = group[0];
-    const mp = sample.mp;
-    const styleId = sample.styleId;
-    const sku = sample.sku;
-
-    /* ---- Closed styles ---- */
-    if (sample.isClosedStyle) {
-      group.forEach(r => {
-        r.actionType = "NONE";
-        r.remark = "Style closed – no shipment";
+    if (ref.isClosedStyle) {
+      group.forEach(r=>{
+        r.actionType="NONE";
+        r.remark="Style closed – no action";
       });
       return;
     }
 
-    /* ---- Separate SELLER & FC rows ---- */
-    const sellerRow = group.find(r => r.warehouseId === "SELLER");
-    const fcRows = group.filter(r => r.warehouseId !== "SELLER");
+    let uniwareStock = ref.uniwareStockQty || 0;
+    let fcPoolTotal = Math.floor(uniwareStock * FC_ALLOCATION_RATIO);
+    let fcPoolRemaining = fcPoolTotal;
+
+    const sellerRow = group.find(r=>r.warehouseId==="SELLER");
+    const fcRows = group.filter(r=>r.warehouseId!=="SELLER");
 
     const sellerSale = sellerRow?.sale30dFc || 0;
-    const fcSale = fcRows.reduce((s, r) => s + (r.sale30dFc || 0), 0);
+    const fcSale = fcRows.reduce((s,r)=>s+(r.sale30dFc||0),0);
 
-    /* ---- Uniware stock & FC pool ---- */
-    let uniwareStock = sample.uniwareStockQty || 0;
-    let fcPool = Math.floor(uniwareStock * FC_ALLOCATION_RATIO);
+    /* ================= FC RECALL ================= */
 
-    /* ===============================
-       STEP 3: NORMAL FC REPLENISHMENT
-       (existing logic – untouched)
-       =============================== */
-
-    fcRows.forEach(r => {
-      if (r.stockCover > 60) {
-        r.recallQty = Math.max(0, Math.floor(r.fcStockQty - (r.drr * 60)));
-        if (r.recallQty > 0) {
+    fcRows.forEach(r=>{
+      if (r.stockCover > 60 && r.drr > 0) {
+        const recall = Math.max(0, Math.floor(r.fcStockQty - r.drr * 60));
+        if (recall > 0) {
+          r.recallQty += recall;
           r.actionType = "RECALL";
           r.shipmentSource = "FC_RECALL";
-          uniwareStock += r.recallQty;
+          uniwareStock += recall;
         }
       }
     });
 
-    fcRows.forEach(r => {
-      if (r.stockCover < 45 && r.drr > 0) {
+    /* ================= FC REPLENISH ================= */
+
+    fcRows.forEach(r=>{
+      if (r.stockCover < 45 && r.drr > 0 && fcPoolRemaining > 0) {
         const need = Math.max(0, Math.floor((45 - r.stockCover) * r.drr));
-        const ship = Math.min(need, fcPool);
+        const ship = Math.min(need, fcPoolRemaining);
         if (ship > 0) {
           r.shipmentQty += ship;
-          r.actionType = "SHIP";
-          r.shipmentSource = "FC_REPLENISHMENT";
-          fcPool -= ship;
+          if (r.actionType === "NONE") r.actionType = "SHIP";
+          r.shipmentSource ||= "FC_REPLENISHMENT";
+          fcPoolRemaining -= ship;
           uniwareStock -= ship;
         }
       }
     });
 
-    /* ===============================
-       STEP 4: SELLER → FC LOGIC
-       =============================== */
+    /* ================= SELLER LOGIC ================= */
 
-    if (sellerSale <= 0 || fcPool <= 0) return;
+    if (sellerSale <= 0 || fcPoolRemaining <= 0) {
+      // no seller processing
+    }
 
     /* ---------- BRANCH A: FC SALE EXISTS ---------- */
-    if (fcSale > 0) {
+    else if (fcSale > 0) {
 
-      const totalSale = sellerSale + fcSale;
-      const sellerDW = sellerSale / totalSale;
+      const sellerDW = sellerSale / (sellerSale + fcSale);
 
-      let sellerAllocQty = Math.floor(
-        fcPool *
-        sample.dwMp *
-        sample.dwStyle *
-        sample.dwSku *
+      let sellerAlloc = Math.floor(
+        fcPoolRemaining *
+        ref.dwMp *
+        ref.dwStyle *
+        ref.dwSku *
         sellerDW
       );
 
-      sellerAllocQty = Math.min(sellerAllocQty, uniwareStock);
-      if (sellerAllocQty <= 0) return;
+      sellerAlloc = Math.min(sellerAlloc, fcPoolRemaining, uniwareStock);
+      if (sellerAlloc > 0) {
 
-      const strength = fcRows.map(r => ({
-        row: r,
-        val: Math.max(r.drr || 0, r.dwFc || 0)
-      })).filter(x => x.val > 0);
+        const strengths = fcRows.map(r=>({
+          r,
+          w: Math.max(r.drr||0, r.dwFc||0)
+        })).filter(x=>x.w>0);
 
-      const totalStrength = strength.reduce((s, x) => s + x.val, 0);
-      if (totalStrength <= 0) return;
+        const totalW = strengths.reduce((s,x)=>s+x.w,0);
 
-      let remaining = sellerAllocQty;
+        let rem = sellerAlloc;
 
-      strength.forEach((x, i) => {
-        const qty = (i === strength.length - 1)
-          ? remaining
-          : Math.floor(sellerAllocQty * (x.val / totalStrength));
+        strengths.forEach((x,i)=>{
+          const qty = (i===strengths.length-1)
+            ? rem
+            : Math.floor(sellerAlloc * x.w / totalW);
 
-        if (qty > 0) {
-          x.row.shipmentQty += qty;
-          x.row.actionType = "SHIP";
-          x.row.shipmentSource = "SELLER_REBALANCE";
-          remaining -= qty;
-        }
-      });
+          if (qty > 0) {
+            x.r.shipmentQty += qty;
+            if (x.r.actionType === "NONE") x.r.actionType = "SHIP";
+            x.r.shipmentSource ||= "SELLER_REBALANCE";
+            rem -= qty;
+          }
+        });
 
-      uniwareStock -= sellerAllocQty;
-      return;
+        fcPoolRemaining -= sellerAlloc;
+        uniwareStock -= sellerAlloc;
+      }
     }
 
     /* ---------- BRANCH B: NO FC SALE (BOOTSTRAP) ---------- */
+    else {
 
-    const bestFCs = BEST_FC_BY_MP[mp] || [];
-    const targetFCs = fcRows.filter(r => bestFCs.includes(r.warehouseId));
-    if (!targetFCs.length) return;
+      const best = BEST_FC_BY_MP[ref.mp] || [];
+      const targets = fcRows.filter(r=>best.includes(r.warehouseId));
+      if (!targets.length) return;
 
-    let sellerAllocQty = Math.floor(
-      fcPool *
-      sample.dwMp *
-      sample.dwStyle *
-      sample.dwSku
-    );
+      let sellerAlloc = Math.floor(
+        fcPoolRemaining *
+        ref.dwMp *
+        ref.dwStyle *
+        ref.dwSku
+      );
 
-    sellerAllocQty = Math.min(sellerAllocQty, uniwareStock);
-    if (sellerAllocQty <= 0) return;
+      sellerAlloc = Math.min(sellerAlloc, fcPoolRemaining, uniwareStock);
+      if (sellerAlloc <= 0) return;
 
-    const baseQty = Math.floor(sellerAllocQty / targetFCs.length);
-    let remainder = sellerAllocQty % targetFCs.length;
+      const base = Math.floor(sellerAlloc / targets.length);
+      let rem = sellerAlloc % targets.length;
 
-    targetFCs.forEach(r => {
-      let qty = baseQty;
-      if (remainder > 0) {
-        qty += 1;
-        remainder -= 1;
-      }
-      if (qty > 0) {
-        r.shipmentQty += qty;
-        r.actionType = "SHIP";
-        r.shipmentSource = "SELLER_BOOTSTRAP_BEST_FC";
-      }
-    });
+      targets.forEach(r=>{
+        let qty = base;
+        if (rem > 0) { qty++; rem--; }
+        if (qty > 0) {
+          r.shipmentQty += qty;
+          if (r.actionType === "NONE") r.actionType = "SHIP";
+          r.shipmentSource ||= "SELLER_BOOTSTRAP_BEST_FC";
+        }
+      });
 
-    uniwareStock -= sellerAllocQty;
+      fcPoolRemaining -= sellerAlloc;
+      uniwareStock -= sellerAlloc;
+    }
+
   });
 
-  /* ===============================
-     STEP 5: FINAL REMARKS
-     =============================== */
+  /* ================= FINAL REMARKS ================= */
 
-  data.forEach(r => {
-    if (r.actionType === "SHIP" && r.shipmentSource === "SELLER_REBALANCE") {
-      r.remark = "Seller demand redistributed to FCs";
-    } else if (r.actionType === "SHIP" && r.shipmentSource === "SELLER_BOOTSTRAP_BEST_FC") {
-      r.remark = "Bootstrap FC allocation (no FC sale history)";
-    } else if (r.actionType === "RECALL") {
-      r.remark = "Stock above 60 days – recall";
-    } else if (!r.remark) {
-      r.remark = "No action required";
+  data.forEach(r=>{
+    if (r.actionType==="RECALL") {
+      r.remark="Stock above 60 days – recall";
+    } else if (r.shipmentSource==="SELLER_REBALANCE") {
+      r.remark="Seller demand redistributed to FCs";
+    } else if (r.shipmentSource==="SELLER_BOOTSTRAP_BEST_FC") {
+      r.remark="Bootstrap FC allocation (no FC sale history)";
+    } else if (r.shipmentSource==="FC_REPLENISHMENT") {
+      r.remark="Shipment allocated as per 45-day stock target";
+    } else {
+      r.remark="No action required";
     }
   });
 
