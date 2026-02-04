@@ -20,10 +20,25 @@
   <!-- SUMMARY -->
   <section class="summary-grid" id="summary"></section>
 
-  <!-- MP TABS (DYNAMIC) -->
+  <!-- MP TABS -->
   <section class="tabs" id="mp-tabs"></section>
 
-  <!-- TABLE -->
+  <!-- TOGGLE -->
+  <div style="margin:12px 0">
+    <button class="tab" onclick="toggleFCSummary()">
+      Toggle FC Summary
+    </button>
+  </div>
+
+  <!-- FC SUMMARY (HIDDEN BY DEFAULT) -->
+  <section class="card" id="fc-summary-card" style="display:none;margin-bottom:16px">
+    <div class="card-header">
+      <h2>MP Summary (FC-wise)</h2>
+    </div>
+    <div class="table-wrapper" id="mp-summary"></div>
+  </section>
+
+  <!-- MAIN TABLE -->
   <section class="card">
     <div class="card-header">
       <h2 id="table-title"></h2>
