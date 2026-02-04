@@ -1,20 +1,39 @@
 /* =========================================================
    CALC.JS – Shipment & Recall Logic Engine
+   STEP 1: Closed Style Override
    ========================================================= */
 
 function runCalculations(normalizedData) {
-  console.log("Starting calculation engine...");
+  console.log("Calculation engine started");
 
-  // Clone to avoid mutation
+  // Deep clone to avoid mutating ingestion output
   const data = JSON.parse(JSON.stringify(normalizedData));
 
-  // 🚧 STEP ORDER (we will fill one by one)
-  // 1. Closed-style override
-  // 2. Demand Weight calculation
-  // 3. Uniware 40% allocation
-  // 4. FC priority override
-  // 5. 45D shipment / 60D recall
+  data.forEach(row => {
+    // -------------------------------
+    // STEP 1: COMPANY CLOSED OVERRIDE
+    // -------------------------------
+    if (row.isClosedStyle) {
+      row.actionType = "CLOSED_RECALL";
 
+      // Recall full FC stock
+      row.recallQty = row.fcStockQty || 0;
+
+      // No shipment allowed
+      row.shipmentQty = 0;
+
+      // Skip all other logic for this row
+      return;
+    }
+
+    // ---------------------------------
+    // PLACEHOLDERS (NEXT STEPS)
+    // ---------------------------------
+    row.actionType = "PENDING";
+    row.shipmentQty = 0;
+    row.recallQty = 0;
+  });
+
+  console.log("Step 1 (Closed-style override) applied");
   return data;
 }
-
