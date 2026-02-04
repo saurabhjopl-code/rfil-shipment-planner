@@ -1,5 +1,5 @@
 /* =========================================================
-   app.js – FINAL UI RENDERER (FULL FILE)
+   app.js – FINAL STABLE UI RENDERER (FULL REPLACE)
    ========================================================= */
 
 let FINAL_DATA = [];
@@ -12,9 +12,12 @@ function fmt(n, d = 2) {
   return isFinite(x) ? x.toFixed(d) : "-";
 }
 
+/* ================= INIT ================= */
+
 document.addEventListener("DOMContentLoaded", async () => {
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
+
   renderSummary();
   buildMPTabs();
 });
@@ -36,21 +39,25 @@ function renderSummary() {
 /* ================= MP TABS ================= */
 
 function buildMPTabs() {
-  const mps = [...new Set(FINAL_DATA.map(r => r.mp))];
   const container = document.getElementById("mp-tabs");
   container.innerHTML = "";
 
+  const mps = [...new Set(FINAL_DATA.map(r => r.mp))].filter(Boolean);
+
   mps.forEach((mp, i) => {
-    const b = document.createElement("button");
-    b.className = "tab" + (i === 0 ? " active" : "");
-    b.innerText = mp;
-    b.onclick = () => {
+    const btn = document.createElement("button");
+    btn.className = "tab" + (i === 0 ? " active" : "");
+    btn.innerText = mp;
+
+    btn.onclick = () => {
       document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      b.classList.add("active");
+      btn.classList.add("active");
       CURRENT_PAGE = 1;
       renderTable(mp);
     };
-    container.appendChild(b);
+
+    container.appendChild(btn);
+
     if (i === 0) {
       CURRENT_MP = mp;
       renderTable(mp);
@@ -60,10 +67,30 @@ function buildMPTabs() {
 
 /* ================= MP SUMMARY ================= */
 
-function renderMPSummary(mp) {
-  const rows = FINAL_DATA.filter(r => r.mp === mp);
-  const map = {};
+function ensureMPSummaryContainer() {
+  let el = document.getElementById("mp-summary");
+  if (!el) {
+    const card = document.createElement("section");
+    card.className = "card";
+    card.style.marginBottom = "16px";
+    card.innerHTML = `
+      <div class="card-header">
+        <h2>MP Summary (FC-wise)</h2>
+      </div>
+      <div class="table-wrapper" id="mp-summary"></div>
+    `;
+    const mainTableCard = document.querySelector(".card");
+    mainTableCard.parentNode.insertBefore(card, mainTableCard);
+    el = document.getElementById("mp-summary");
+  }
+  return el;
+}
 
+function renderMPSummary(mp) {
+  const container = ensureMPSummaryContainer();
+  const rows = FINAL_DATA.filter(r => r.mp === mp);
+
+  const map = {};
   rows.forEach(r => {
     if (!map[r.warehouseId]) {
       map[r.warehouseId] = { sku: new Set(), ship: 0, recall: 0 };
@@ -82,7 +109,8 @@ function renderMPSummary(mp) {
           <th>Shipment Qty</th>
           <th>Recall Qty</th>
         </tr>
-      </thead><tbody>
+      </thead>
+      <tbody>
   `;
 
   Object.entries(map).forEach(([fc, v]) => {
@@ -92,11 +120,12 @@ function renderMPSummary(mp) {
         <td>${v.sku.size}</td>
         <td>${v.ship}</td>
         <td>${v.recall}</td>
-      </tr>`;
+      </tr>
+    `;
   });
 
   html += "</tbody></table>";
-  document.getElementById("mp-summary").innerHTML = html;
+  container.innerHTML = html;
 }
 
 /* ================= MAIN TABLE ================= */
@@ -115,35 +144,46 @@ function renderTable(mp) {
     <table>
       <thead>
         <tr>
-          <th>Style</th><th>SKU</th><th>FC</th><th>DRR</th>
-          <th>FC Stock</th><th>Stock Cover</th>
-          <th>Shipment</th><th>Recall</th><th>Action</th><th>Remarks</th>
+          <th>Style</th>
+          <th>SKU</th>
+          <th>FC</th>
+          <th>DRR</th>
+          <th>FC Stock</th>
+          <th>Stock Cover</th>
+          <th>Shipment</th>
+          <th>Recall</th>
+          <th>Action</th>
+          <th>Remarks</th>
         </tr>
-      </thead><tbody>
+      </thead>
+      <tbody>
   `;
 
   visible.forEach(r => {
     html += `
       <tr>
-        <td>${r.styleId}</td>
-        <td>${r.sku}</td>
-        <td>${r.warehouseId}</td>
+        <td>${r.styleId || "-"}</td>
+        <td>${r.sku || "-"}</td>
+        <td>${r.warehouseId || "-"}</td>
         <td>${fmt(r.drr)}</td>
-        <td>${r.fcStockQty}</td>
+        <td>${r.fcStockQty ?? "-"}</td>
         <td>${fmt(r.stockCover,1)}</td>
-        <td>${r.shipmentQty}</td>
-        <td>${r.recallQty}</td>
+        <td>${r.shipmentQty || 0}</td>
+        <td>${r.recallQty || 0}</td>
         <td>${r.actionType}</td>
-        <td style="max-width:280px">${r.remark}</td>
-      </tr>`;
+        <td style="max-width:280px">${r.remark || ""}</td>
+      </tr>
+    `;
   });
 
   html += "</tbody></table>";
 
   if (visible.length < rows.length) {
-    html += `<div style="text-align:center;padding:12px">
-      <button class="tab" onclick="loadMore()">Load more</button>
-    </div>`;
+    html += `
+      <div style="text-align:center;padding:12px">
+        <button class="tab" onclick="loadMore()">Load more</button>
+      </div>
+    `;
   }
 
   document.getElementById("table-container").innerHTML = html;
