@@ -1,22 +1,20 @@
+/* =========================================================
+   app.js – FINAL UI RENDERER (FULL FILE)
+   ========================================================= */
+
 let FINAL_DATA = [];
 let CURRENT_MP = "";
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
 
-/* ================= UTILS ================= */
-
-function fmt(num, digits = 2) {
-  const n = Number(num);
-  if (!isFinite(n)) return "-";
-  return n.toFixed(digits);
+function fmt(n, d = 2) {
+  const x = Number(n);
+  return isFinite(x) ? x.toFixed(d) : "-";
 }
-
-/* ================= INIT ================= */
 
 document.addEventListener("DOMContentLoaded", async () => {
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
-
   renderSummary();
   buildMPTabs();
 });
@@ -24,111 +22,128 @@ document.addEventListener("DOMContentLoaded", async () => {
 /* ================= SUMMARY ================= */
 
 function renderSummary() {
-  const ship = FINAL_DATA.reduce((s, r) => s + (Number(r.shipmentQty) || 0), 0);
-  const recall = FINAL_DATA.reduce((s, r) => s + (Number(r.recallQty) || 0), 0);
-  const closed = FINAL_DATA.filter(r => r.isClosedStyle).length;
+  const ship = FINAL_DATA.reduce((s, r) => s + (r.shipmentQty || 0), 0);
+  const recall = FINAL_DATA.reduce((s, r) => s + (r.recallQty || 0), 0);
 
   document.getElementById("summary").innerHTML = `
     <div class="summary-card"><h3>Total Rows</h3><p>${FINAL_DATA.length}</p></div>
     <div class="summary-card"><h3>Shipment Qty</h3><p>${ship}</p></div>
     <div class="summary-card"><h3>Recall Qty</h3><p>${recall}</p></div>
-    <div class="summary-card"><h3>Closed Rows</h3><p>${closed}</p></div>
+    <div class="summary-card"><h3>Closed Rows</h3><p>${FINAL_DATA.filter(r=>r.isClosedStyle).length}</p></div>
   `;
 }
 
 /* ================= MP TABS ================= */
 
 function buildMPTabs() {
+  const mps = [...new Set(FINAL_DATA.map(r => r.mp))];
   const container = document.getElementById("mp-tabs");
   container.innerHTML = "";
 
-  const mps = [...new Set(FINAL_DATA.map(r => r.mp))].filter(Boolean);
-
-  mps.forEach((mp, idx) => {
-    const btn = document.createElement("button");
-    btn.className = "tab" + (idx === 0 ? " active" : "");
-    btn.innerText = mp;
-
-    btn.onclick = () => {
+  mps.forEach((mp, i) => {
+    const b = document.createElement("button");
+    b.className = "tab" + (i === 0 ? " active" : "");
+    b.innerText = mp;
+    b.onclick = () => {
       document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      btn.classList.add("active");
+      b.classList.add("active");
       CURRENT_PAGE = 1;
       renderTable(mp);
     };
-
-    container.appendChild(btn);
-
-    if (idx === 0) {
+    container.appendChild(b);
+    if (i === 0) {
       CURRENT_MP = mp;
       renderTable(mp);
     }
   });
 }
 
-/* ================= TABLE ================= */
+/* ================= MP SUMMARY ================= */
 
-function renderTable(mp) {
-  CURRENT_MP = mp;
-
+function renderMPSummary(mp) {
   const rows = FINAL_DATA.filter(r => r.mp === mp);
-  const visibleRows = rows.slice(0, CURRENT_PAGE * PAGE_SIZE);
+  const map = {};
 
-  document.getElementById("table-title").innerText =
-    `${mp} – FC Planning (${rows.length} rows, showing ${visibleRows.length})`;
-
-  if (!rows.length) {
-    document.getElementById("table-container").innerHTML =
-      `<div style="padding:24px;color:#64748b">No data</div>`;
-    return;
-  }
+  rows.forEach(r => {
+    if (!map[r.warehouseId]) {
+      map[r.warehouseId] = { sku: new Set(), ship: 0, recall: 0 };
+    }
+    map[r.warehouseId].sku.add(r.sku);
+    map[r.warehouseId].ship += r.shipmentQty || 0;
+    map[r.warehouseId].recall += r.recallQty || 0;
+  });
 
   let html = `
     <table>
       <thead>
         <tr>
-          <th>Style</th>
-          <th>SKU</th>
           <th>FC</th>
-          <th>DRR</th>
-          <th>FC Stock</th>
-          <th>Stock Cover</th>
-          <th>Shipment</th>
-          <th>Recall</th>
-          <th>Action</th>
+          <th>SKU Count</th>
+          <th>Shipment Qty</th>
+          <th>Recall Qty</th>
         </tr>
-      </thead>
-      <tbody>
+      </thead><tbody>
   `;
 
-  visibleRows.forEach(r => {
-    let tag = "tag-none";
-    if (r.actionType === "SHIP") tag = "tag-ship";
-    if (r.actionType === "RECALL") tag = "tag-recall";
-    if (r.actionType === "CLOSED_RECALL") tag = "tag-closed";
-
+  Object.entries(map).forEach(([fc, v]) => {
     html += `
       <tr>
-        <td>${r.styleId || "-"}</td>
-        <td>${r.sku || "-"}</td>
-        <td>${r.warehouseId || "-"}</td>
-        <td>${fmt(r.drr)}</td>
-        <td>${r.fcStockQty ?? "-"}</td>
-        <td>${r.stockCover === Infinity ? "∞" : fmt(r.stockCover, 1)}</td>
-        <td>${r.shipmentQty || 0}</td>
-        <td>${r.recallQty || 0}</td>
-        <td><span class="tag ${tag}">${r.actionType}</span></td>
-      </tr>
-    `;
+        <td>${fc}</td>
+        <td>${v.sku.size}</td>
+        <td>${v.ship}</td>
+        <td>${v.recall}</td>
+      </tr>`;
   });
 
-  html += `</tbody></table>`;
+  html += "</tbody></table>";
+  document.getElementById("mp-summary").innerHTML = html;
+}
 
-  if (visibleRows.length < rows.length) {
+/* ================= MAIN TABLE ================= */
+
+function renderTable(mp) {
+  CURRENT_MP = mp;
+  renderMPSummary(mp);
+
+  const rows = FINAL_DATA.filter(r => r.mp === mp);
+  const visible = rows.slice(0, CURRENT_PAGE * PAGE_SIZE);
+
+  document.getElementById("table-title").innerText =
+    `${mp} – FC Planning (${rows.length} rows, showing ${visible.length})`;
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Style</th><th>SKU</th><th>FC</th><th>DRR</th>
+          <th>FC Stock</th><th>Stock Cover</th>
+          <th>Shipment</th><th>Recall</th><th>Action</th><th>Remarks</th>
+        </tr>
+      </thead><tbody>
+  `;
+
+  visible.forEach(r => {
     html += `
-      <div style="padding:16px;text-align:center">
-        <button class="tab" onclick="loadMore()">Load more</button>
-      </div>
-    `;
+      <tr>
+        <td>${r.styleId}</td>
+        <td>${r.sku}</td>
+        <td>${r.warehouseId}</td>
+        <td>${fmt(r.drr)}</td>
+        <td>${r.fcStockQty}</td>
+        <td>${fmt(r.stockCover,1)}</td>
+        <td>${r.shipmentQty}</td>
+        <td>${r.recallQty}</td>
+        <td>${r.actionType}</td>
+        <td style="max-width:280px">${r.remark}</td>
+      </tr>`;
+  });
+
+  html += "</tbody></table>";
+
+  if (visible.length < rows.length) {
+    html += `<div style="text-align:center;padding:12px">
+      <button class="tab" onclick="loadMore()">Load more</button>
+    </div>`;
   }
 
   document.getElementById("table-container").innerHTML = html;
