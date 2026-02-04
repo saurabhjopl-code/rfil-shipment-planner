@@ -3,6 +3,16 @@ let CURRENT_MP = "";
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
 
+/* ================= UTILS ================= */
+
+function fmt(num, digits = 2) {
+  const n = Number(num);
+  if (!isFinite(n)) return "-";
+  return n.toFixed(digits);
+}
+
+/* ================= INIT ================= */
+
 document.addEventListener("DOMContentLoaded", async () => {
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
@@ -14,8 +24,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 /* ================= SUMMARY ================= */
 
 function renderSummary() {
-  const ship = FINAL_DATA.reduce((s, r) => s + (r.shipmentQty || 0), 0);
-  const recall = FINAL_DATA.reduce((s, r) => s + (r.recallQty || 0), 0);
+  const ship = FINAL_DATA.reduce((s, r) => s + (Number(r.shipmentQty) || 0), 0);
+  const recall = FINAL_DATA.reduce((s, r) => s + (Number(r.recallQty) || 0), 0);
   const closed = FINAL_DATA.filter(r => r.isClosedStyle).length;
 
   document.getElementById("summary").innerHTML = `
@@ -29,19 +39,14 @@ function renderSummary() {
 /* ================= MP TABS ================= */
 
 function buildMPTabs() {
-  const tabContainer = document.getElementById("mp-tabs");
-  tabContainer.innerHTML = "";
+  const container = document.getElementById("mp-tabs");
+  container.innerHTML = "";
 
-  const uniqueMPs = [...new Set(FINAL_DATA.map(r => r.mp))].filter(Boolean);
+  const mps = [...new Set(FINAL_DATA.map(r => r.mp))].filter(Boolean);
 
-  if (!uniqueMPs.length) {
-    tabContainer.innerHTML = `<span style="color:#64748b">No MP found</span>`;
-    return;
-  }
-
-  uniqueMPs.forEach((mp, index) => {
+  mps.forEach((mp, idx) => {
     const btn = document.createElement("button");
-    btn.className = "tab" + (index === 0 ? " active" : "");
+    btn.className = "tab" + (idx === 0 ? " active" : "");
     btn.innerText = mp;
 
     btn.onclick = () => {
@@ -51,9 +56,9 @@ function buildMPTabs() {
       renderTable(mp);
     };
 
-    tabContainer.appendChild(btn);
+    container.appendChild(btn);
 
-    if (index === 0) {
+    if (idx === 0) {
       CURRENT_MP = mp;
       renderTable(mp);
     }
@@ -96,22 +101,22 @@ function renderTable(mp) {
   `;
 
   visibleRows.forEach(r => {
-    let tagClass = "tag-none";
-    if (r.actionType === "SHIP") tagClass = "tag-ship";
-    if (r.actionType === "RECALL") tagClass = "tag-recall";
-    if (r.actionType === "CLOSED_RECALL") tagClass = "tag-closed";
+    let tag = "tag-none";
+    if (r.actionType === "SHIP") tag = "tag-ship";
+    if (r.actionType === "RECALL") tag = "tag-recall";
+    if (r.actionType === "CLOSED_RECALL") tag = "tag-closed";
 
     html += `
       <tr>
-        <td>${r.styleId}</td>
-        <td>${r.sku}</td>
-        <td>${r.warehouseId}</td>
-        <td>${r.drr.toFixed(2)}</td>
-        <td>${r.fcStockQty}</td>
-        <td>${r.stockCover === Infinity ? "∞" : r.stockCover.toFixed(1)}</td>
+        <td>${r.styleId || "-"}</td>
+        <td>${r.sku || "-"}</td>
+        <td>${r.warehouseId || "-"}</td>
+        <td>${fmt(r.drr)}</td>
+        <td>${r.fcStockQty ?? "-"}</td>
+        <td>${r.stockCover === Infinity ? "∞" : fmt(r.stockCover, 1)}</td>
         <td>${r.shipmentQty || 0}</td>
         <td>${r.recallQty || 0}</td>
-        <td><span class="tag ${tagClass}">${r.actionType}</span></td>
+        <td><span class="tag ${tag}">${r.actionType}</span></td>
       </tr>
     `;
   });
