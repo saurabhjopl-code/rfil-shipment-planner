@@ -71,6 +71,58 @@ function runCalculations(normalizedData) {
       : (allocUW[r.uniwareSku] || 0) * r.finalSkuDw;
   });
 
+  /* =========================================================
+     STEP 3.5: SELLER AS MP DERIVATION (NEW - ADDITIVE)
+     ========================================================= */
+
+  const SELLER_BEST_FCS = {
+    "Amazon IN": ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
+    "Myntra": ["Bangalore", "Mumbai", "Bilaspur"],
+    "Flipkart": ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"]
+  };
+
+  const sellerDerivedRows = [];
+
+  data.forEach(r => {
+    if (r.isClosedStyle) return;
+    if (r.warehouseId !== "SELLER") return;
+    if (!SELLER_BEST_FCS[r.mp]) return;
+
+    const saleQty = r.sale30dFc || 0;
+    if (saleQty <= 0) return;
+
+    const sellerDRR = saleQty / 30;
+
+    SELLER_BEST_FCS[r.mp].forEach(fc => {
+      sellerDerivedRows.push({
+        ...r,
+        mp: "SELLER",
+        originMp: r.mp,
+        warehouseId: fc,
+        sale30dFc: saleQty,
+        drr: sellerDRR,
+        fcStockQty: 0,
+        stockCover: 0
+      });
+    });
+  });
+
+  /* Attach FC stock to SELLER MP rows */
+  const fcStockIndex = {};
+  data.forEach(r => {
+    if (r.warehouseId !== "SELLER") {
+      fcStockIndex[`${r.mp}|${r.warehouseId}|${r.sku}`] = r.fcStockQty || 0;
+    }
+  });
+
+  sellerDerivedRows.forEach(r => {
+    const key = `${r.originMp}|${r.warehouseId}|${r.sku}`;
+    r.fcStockQty = fcStockIndex[key] || 0;
+  });
+
+  /* Merge SELLER MP rows into main dataset */
+  data.push(...sellerDerivedRows);
+
   /* ===============================
      STEP 4: 45D / 60D LOGIC
      =============================== */
@@ -86,7 +138,7 @@ function runCalculations(normalizedData) {
     const cover = r.fcStockQty / drr;
     r.stockCover = cover;
 
-    if (cover > 60) {
+    if (cover > 60 && r.mp !== "SELLER") {
       r.actionType = "RECALL";
       r.recallQty = Math.floor(r.fcStockQty - drr * 60);
       return;
