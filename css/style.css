@@ -164,3 +164,20 @@ tbody tr:hover {
   background: #e5e7eb;
   color: #374151;
 }
+.filter-row th {
+  padding: 6px 8px;
+  background: #f8fafc;
+}
+
+.filter-input, .filter-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.filter-input:focus, .filter-select:focus {
+  outline: none;
+  border-color: #2563eb;
+}
