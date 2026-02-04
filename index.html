@@ -4,44 +4,37 @@
   <meta charset="UTF-8" />
   <title>Shipment Planner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
-  <!-- HEADER -->
-  <header class="topbar">
-    <div class="brand">
-      <h1>Shipment Planner</h1>
-      <span>Smart FC Allocation Engine</span>
+<header class="topbar">
+  <div class="brand">
+    <h1>Shipment Planner</h1>
+    <span>Smart FC Allocation Engine</span>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- SUMMARY -->
+  <section class="summary-grid" id="summary"></section>
+
+  <!-- MP TABS (DYNAMIC) -->
+  <section class="tabs" id="mp-tabs"></section>
+
+  <!-- TABLE -->
+  <section class="card">
+    <div class="card-header">
+      <h2 id="table-title"></h2>
     </div>
-  </header>
+    <div class="table-wrapper" id="table-container"></div>
+  </section>
 
-  <!-- MAIN -->
-  <main class="container">
+</main>
 
-    <!-- SUMMARY -->
-    <section class="summary-grid" id="summary"></section>
-
-    <!-- MARKETPLACE TABS -->
-    <section class="tabs">
-      <button class="tab active" data-mp="Amazon">Amazon</button>
-      <button class="tab" data-mp="Flipkart">Flipkart</button>
-      <button class="tab" data-mp="Myntra">Myntra</button>
-    </section>
-
-    <!-- TABLE -->
-    <section class="card">
-      <div class="card-header">
-        <h2 id="table-title">Amazon – FC Planning</h2>
-      </div>
-      <div class="table-wrapper" id="table-container"></div>
-    </section>
-
-  </main>
-
-  <script src="js/ingest.js"></script>
-  <script src="js/calc.js"></script>
-  <script src="js/app.js"></script>
+<script src="js/ingest.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
