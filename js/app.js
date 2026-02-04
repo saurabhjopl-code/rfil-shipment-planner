@@ -1,8 +1,8 @@
 /* =========================================================
-   app.js – V1.2.2 (FULL REPLACE)
+   app.js – V1.2.3 (FULL REPLACE)
    Fixes:
-   - Header filter UX
-   - SKU search usability
+   - Toggle FC Summary reliability
+   - FC Summary auto-refresh on MP change
    ========================================================= */
 
 let FINAL_DATA = [];
@@ -10,9 +10,13 @@ let CURRENT_MP = "";
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
 
-/* persistent filter state */
+/* filter state */
 const FILTERS = { sku:"", fc:"ALL", action:"ALL" };
 
+/* FC Summary state */
+let FC_SUMMARY_VISIBLE = false;
+
+/* helpers */
 function fmt(n,d=2){const x=Number(n);return isFinite(x)?x.toFixed(d):"-";}
 function sum(arr,k){return arr.reduce((s,r)=>s+(+r[k]||0),0);}
 
@@ -28,7 +32,8 @@ document.addEventListener("DOMContentLoaded", async ()=>{
   }
 });
 
-/* summary */
+/* ================= SUMMARY ================= */
+
 function renderSummary(){
   document.getElementById("summary").innerHTML=`
     <div class="summary-card"><h3>Total Rows</h3><p>${FINAL_DATA.length}</p></div>
@@ -38,28 +43,115 @@ function renderSummary(){
   `;
 }
 
-/* mp tabs */
+/* ================= MP TABS ================= */
+
 function buildMPTabs(){
-  const c=document.getElementById("mp-tabs"); c.innerHTML="";
+  const c=document.getElementById("mp-tabs");
+  c.innerHTML="";
+
   [...new Set(FINAL_DATA.map(r=>r.mp))].forEach((mp,i)=>{
     const b=document.createElement("button");
     b.className="tab"+(i===0?" active":"");
     b.innerText=mp;
-    b.onclick=()=>{document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-      b.classList.add("active"); CURRENT_PAGE=1; renderTable(mp);}
+
+    b.onclick=()=>{
+      document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      b.classList.add("active");
+      CURRENT_MP=mp;
+      CURRENT_PAGE=1;
+
+      renderTable(mp);
+
+      /* 🔥 FIX: auto-refresh FC summary if visible */
+      if(FC_SUMMARY_VISIBLE){
+        renderMPSummary(mp);
+      }
+    };
+
     c.appendChild(b);
-    if(i===0){CURRENT_MP=mp; renderTable(mp);}
+
+    if(i===0){
+      CURRENT_MP=mp;
+      renderTable(mp);
+    }
   });
 }
 
-/* main table */
+/* ================= FC SUMMARY ================= */
+
+window.toggleFCSummary = function(){
+  const card=document.getElementById("fc-summary-card");
+
+  FC_SUMMARY_VISIBLE = !FC_SUMMARY_VISIBLE;
+  card.style.display = FC_SUMMARY_VISIBLE ? "block" : "none";
+
+  if(FC_SUMMARY_VISIBLE){
+    renderMPSummary(CURRENT_MP);
+  }
+};
+
+function renderMPSummary(mp){
+  const rows=FINAL_DATA.filter(r=>r.mp===mp);
+  const map={};
+
+  rows.forEach(r=>{
+    map[r.warehouseId] ??= {sku:new Set(),sale:0,stock:0,ship:0,recall:0};
+    map[r.warehouseId].sku.add(r.sku);
+    map[r.warehouseId].sale+=r.sale30dFc||0;
+    map[r.warehouseId].stock+=r.fcStockQty||0;
+    map[r.warehouseId].ship+=r.shipmentQty||0;
+    map[r.warehouseId].recall+=r.recallQty||0;
+  });
+
+  let gt={sku:0,sale:0,stock:0,ship:0,recall:0};
+
+  let html=`
+    <table>
+      <thead>
+        <tr>
+          <th>FC</th><th>SKU Count</th><th>Total Sale</th>
+          <th>Total Stock</th><th>Shipment Qty</th><th>Recall Qty</th>
+        </tr>
+      </thead><tbody>
+  `;
+
+  Object.entries(map).forEach(([fc,v])=>{
+    html+=`
+      <tr>
+        <td>${fc}</td>
+        <td>${v.sku.size}</td>
+        <td>${v.sale}</td>
+        <td>${v.stock}</td>
+        <td>${v.ship}</td>
+        <td>${v.recall}</td>
+      </tr>`;
+    gt.sku+=v.sku.size; gt.sale+=v.sale; gt.stock+=v.stock;
+    gt.ship+=v.ship; gt.recall+=v.recall;
+  });
+
+  html+=`
+    <tr style="font-weight:600;background:#f8fafc">
+      <td>GRAND TOTAL</td>
+      <td>${gt.sku}</td>
+      <td>${gt.sale}</td>
+      <td>${gt.stock}</td>
+      <td>${gt.ship}</td>
+      <td>${gt.recall}</td>
+    </tr>
+  </tbody></table>`;
+
+  document.getElementById("mp-summary").innerHTML=html;
+}
+
+/* ================= MAIN TABLE ================= */
+
 function renderTable(mp){
   CURRENT_MP=mp;
 
-  let rows = FINAL_DATA.filter(r=>r.mp===mp)
+  let rows=FINAL_DATA.filter(r=>r.mp===mp)
     .sort((a,b)=>(b.sale30dFc||0)-(a.sale30dFc||0));
 
-  rows = rows.filter(r=>{
+  rows=rows.filter(r=>{
     if(FILTERS.sku && !r.sku?.toLowerCase().includes(FILTERS.sku)) return false;
     if(FILTERS.fc!=="ALL" && r.warehouseId!==FILTERS.fc) return false;
     if(FILTERS.action!=="ALL" && r.actionType!==FILTERS.action) return false;
@@ -79,8 +171,8 @@ function renderTable(mp){
       <tr class="filter-row">
         <th></th>
         <th>
-          <input class="filter-input" placeholder="Search SKU"
-            value="${FILTERS.sku}"
+          <input class="filter-input" value="${FILTERS.sku}"
+            placeholder="Search SKU"
             onkeydown="if(event.key==='Enter'){FILTERS.sku=this.value.toLowerCase();CURRENT_PAGE=1;renderTable(CURRENT_MP)}"
             onblur="FILTERS.sku=this.value.toLowerCase();CURRENT_PAGE=1;renderTable(CURRENT_MP)">
         </th>
@@ -101,8 +193,7 @@ function renderTable(mp){
         </th>
         <th></th>
       </tr>
-    </thead>
-    <tbody>
+    </thead><tbody>
   `;
 
   rows.slice(0,CURRENT_PAGE*PAGE_SIZE).forEach(r=>{
