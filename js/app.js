@@ -1,9 +1,10 @@
 let FINAL_DATA = [];
 let CURRENT_MP = "Amazon";
+let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
 
 /* ============================
-   STRONG MP NORMALIZATION
+   MP NORMALIZATION
    ============================ */
 function normalizeMP(mp) {
   if (!mp) return "";
@@ -15,21 +16,12 @@ function normalizeMP(mp) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("Loading data…");
-
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
 
-  // attach UI MP safely
   FINAL_DATA.forEach(r => {
     r.uiMP = normalizeMP(r.mp);
   });
-
-  console.log("Total rows:", FINAL_DATA.length);
-  console.log(
-    "Amazon rows:",
-    FINAL_DATA.filter(r => r.uiMP === "Amazon").length
-  );
 
   renderSummary();
   renderTable("Amazon");
@@ -38,6 +30,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     tab.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
+      CURRENT_PAGE = 1;
       renderTable(tab.dataset.mp);
     });
   });
@@ -64,14 +57,15 @@ function renderTable(mp) {
   CURRENT_MP = mp;
 
   const rows = FINAL_DATA.filter(r => r.uiMP === mp);
-  const visibleRows = rows.slice(0, PAGE_SIZE);
+  const visibleCount = CURRENT_PAGE * PAGE_SIZE;
+  const visibleRows = rows.slice(0, visibleCount);
 
   document.getElementById("table-title").innerText =
     `${mp} – FC Planning (${rows.length} rows, showing ${visibleRows.length})`;
 
   if (!rows.length) {
     document.getElementById("table-container").innerHTML =
-      `<div style="padding:24px;color:#64748b">No data for ${mp}</div>`;
+      `<div style="padding:24px;color:#64748b">No data</div>`;
     return;
   }
 
@@ -114,6 +108,22 @@ function renderTable(mp) {
     `;
   });
 
-  html += "</tbody></table>";
+  html += `</tbody></table>`;
+
+  if (visibleCount < rows.length) {
+    html += `
+      <div style="padding:16px;text-align:center">
+        <button onclick="loadMore()" class="tab">
+          Load more
+        </button>
+      </div>
+    `;
+  }
+
   document.getElementById("table-container").innerHTML = html;
+}
+
+function loadMore() {
+  CURRENT_PAGE++;
+  renderTable(CURRENT_MP);
 }
