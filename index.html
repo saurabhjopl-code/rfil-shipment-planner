@@ -1,153 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Shipment Planning App</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- CSS -->
+  <title>Shipment Planner</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
-
 <body>
 
-  <!-- ================= Header ================= -->
-  <header class="app-header">
-    <h1>Shipment Planning Dashboard</h1>
-    <p>Sales • FC Stock • Seller Stock → Shipment Qty</p>
-  </header>
+<h1>Shipment Planning Dashboard</h1>
 
-  <!-- ================= Data Source Status ================= -->
-  <section class="data-status">
-    <div class="status-box">
-      <span class="label">Sales Data (30D)</span>
-      <span class="status pending">Not Connected</span>
-    </div>
-    <div class="status-box">
-      <span class="label">FC Stock</span>
-      <span class="status pending">Not Connected</span>
-    </div>
-    <div class="status-box">
-      <span class="label">Seller Stock (Uniware)</span>
-      <span class="status pending">Not Connected</span>
-    </div>
-  </section>
+<!-- SUMMARY -->
+<div id="summary" class="summary-box"></div>
 
-  <!-- ================= Global Controls ================= -->
-  <section class="controls">
-    <button disabled>🔄 Fetch Google Sheet Data</button>
+<!-- TABS -->
+<div class="tabs">
+  <button onclick="showMP('Amazon')">Amazon</button>
+  <button onclick="showMP('Flipkart')">Flipkart</button>
+  <button onclick="showMP('Myntra')">Myntra</button>
+</div>
 
-    <div class="control-group">
-      <label>Total Planning Days</label>
-      <input type="number" value="30" disabled />
-    </div>
+<!-- TABLE -->
+<div id="table-container"></div>
 
-    <div class="control-group">
-      <label>Safety Buffer (%)</label>
-      <input type="number" value="10" disabled />
-    </div>
-  </section>
-
-  <!-- ================= Marketplace Tabs ================= -->
-  <section class="marketplace-tabs">
-    <button class="tab active" data-mp="amazon">Amazon IN</button>
-    <button class="tab" data-mp="flipkart">Flipkart</button>
-    <button class="tab" data-mp="myntra">Myntra</button>
-  </section>
-
-  <!-- ================= Marketplace Content ================= -->
-  <section class="marketplace-content">
-
-    <!-- ===== Amazon ===== -->
-    <div class="mp-section active" id="amazon">
-      <div class="mp-header">
-        <h2>Amazon IN – Shipment Planning</h2>
-        <button disabled>⬇ Export Amazon Shipment</button>
-      </div>
-
-      <table class="planning-table">
-        <thead>
-          <tr>
-            <th>Style ID</th>
-            <th>SKU</th>
-            <th>30D Sale</th>
-            <th>Daily Run Rate</th>
-            <th>FC Stock</th>
-            <th>Seller Stock</th>
-            <th>Target Stock</th>
-            <th>Shipment Qty</th>
-            <th>Priority FC</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="placeholder">
-            <td colspan="9">Data will appear here</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ===== Flipkart ===== -->
-    <div class="mp-section" id="flipkart">
-      <div class="mp-header">
-        <h2>Flipkart – Shipment Planning</h2>
-        <button disabled>⬇ Export Flipkart Shipment</button>
-      </div>
-
-      <table class="planning-table">
-        <thead>
-          <tr>
-            <th>Style ID</th>
-            <th>SKU</th>
-            <th>30D Sale</th>
-            <th>Daily Run Rate</th>
-            <th>FC Stock</th>
-            <th>Seller Stock</th>
-            <th>Target Stock</th>
-            <th>Shipment Qty</th>
-            <th>Priority FC</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="placeholder">
-            <td colspan="9">Data will appear here</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- ===== Myntra ===== -->
-    <div class="mp-section" id="myntra">
-      <div class="mp-header">
-        <h2>Myntra – Shipment Planning</h2>
-        <button disabled>⬇ Export Myntra Shipment</button>
-      </div>
-
-      <table class="planning-table">
-        <thead>
-          <tr>
-            <th>Style ID</th>
-            <th>SKU</th>
-            <th>30D Sale</th>
-            <th>Daily Run Rate</th>
-            <th>FC Stock</th>
-            <th>Seller Stock</th>
-            <th>Target Stock</th>
-            <th>Shipment Qty</th>
-            <th>Priority FC</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="placeholder">
-            <td colspan="9">Data will appear here</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-  </section>
-
-  <!-- JS -->
-  <script src="js/app.js"></script>
+<script src="js/ingest.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>
