@@ -1,13 +1,14 @@
 /* =========================================================
    CALC.JS – Shipment & Recall Logic Engine
    STEP 1: Closed Style Override
-   STEP 2: Demand Weight (DW) Calculation
+   STEP 2: Demand Weight (DW)
+   STEP C: 40% Uniware Stock Allocation
    ========================================================= */
 
 function runCalculations(normalizedData) {
   console.log("Calculation engine started");
 
-  // Deep clone to avoid mutating ingestion output
+  // Deep clone to avoid mutation
   const data = JSON.parse(JSON.stringify(normalizedData));
 
   /* =====================================================
@@ -26,36 +27,28 @@ function runCalculations(normalizedData) {
   });
 
   /* =====================================================
-     STEP 2: DEMAND WEIGHT (DW) CALCULATION
+     STEP 2: DEMAND WEIGHT (DW)
      ===================================================== */
 
-  // ---- 2.1 Total sale per Uniware SKU (all MPs, FC + SELLER)
   const totalSaleByUniware = {};
+  const mpSaleByUniware = {};
+  const fcSaleByUniware = {};
+
   data.forEach(r => {
     if (r.isClosedStyle) return;
+
     totalSaleByUniware[r.uniwareSku] =
       (totalSaleByUniware[r.uniwareSku] || 0) + r.totalSale30d;
+
+    const mpKey = `${r.uniwareSku}|${r.mp}`;
+    mpSaleByUniware[mpKey] =
+      (mpSaleByUniware[mpKey] || 0) + r.totalSale30d;
+
+    const fcKey = `${r.uniwareSku}|${r.mp}|${r.warehouseId}`;
+    fcSaleByUniware[fcKey] =
+      (fcSaleByUniware[fcKey] || 0) + r.sale30dFc;
   });
 
-  // ---- 2.2 MP-wise sale per Uniware SKU
-  const mpSaleByUniware = {};
-  data.forEach(r => {
-    if (r.isClosedStyle) return;
-    const key = `${r.uniwareSku}|${r.mp}`;
-    mpSaleByUniware[key] =
-      (mpSaleByUniware[key] || 0) + r.totalSale30d;
-  });
-
-  // ---- 2.3 FC-wise sale per Uniware SKU (FC only, no SELLER)
-  const fcSaleByUniware = {};
-  data.forEach(r => {
-    if (r.isClosedStyle) return;
-    const key = `${r.uniwareSku}|${r.mp}|${r.warehouseId}`;
-    fcSaleByUniware[key] =
-      (fcSaleByUniware[key] || 0) + r.sale30dFc;
-  });
-
-  // ---- 2.4 Assign DWs to each row
   data.forEach(r => {
     if (r.isClosedStyle) {
       r.mpDw = 0;
@@ -72,16 +65,43 @@ function runCalculations(normalizedData) {
         `${r.uniwareSku}|${r.mp}|${r.warehouseId}`
       ] || 0;
 
-    // MP-wise DW
     r.mpDw = totalSaleUW > 0 ? mpSale / totalSaleUW : 0;
-
-    // FC-wise DW (inside MP)
     r.fcDw = mpSale > 0 ? fcSale / mpSale : 0;
-
-    // Final SKU DW (used later for allocation)
     r.finalSkuDw = r.mpDw * r.fcDw;
   });
 
-  console.log("Step 2 (Demand Weight) applied");
+  console.log("Step 2 (DW) applied");
+
+  /* =====================================================
+     STEP C: 40% UNIWARE STOCK ALLOCATION
+     ===================================================== */
+
+  // ---- 3.1 Allocatable stock per Uniware SKU
+  const allocatableByUniware = {};
+
+  data.forEach(r => {
+    if (r.isClosedStyle) return;
+
+    if (!allocatableByUniware[r.uniwareSku]) {
+      allocatableByUniware[r.uniwareSku] =
+        (r.uniwareStockQty || 0) * 0.4;
+    }
+  });
+
+  // ---- 3.2 Allocate using FINAL_SKU_DW
+  data.forEach(r => {
+    if (r.isClosedStyle) {
+      r.allocatableQtyForRow = 0;
+      return;
+    }
+
+    const allocatableUW =
+      allocatableByUniware[r.uniwareSku] || 0;
+
+    r.allocatableQtyForRow =
+      allocatableUW * (r.finalSkuDw || 0);
+  });
+
+  console.log("Step C (40% Uniware allocation) applied");
   return data;
 }
