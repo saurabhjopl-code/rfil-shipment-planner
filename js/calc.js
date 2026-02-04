@@ -2,7 +2,8 @@
    CALC.JS – Shipment & Recall Logic Engine
    STEP 1: Closed Style Override
    STEP 2: Demand Weight (DW)
-   STEP C: 40% Uniware Stock Allocation
+   STEP C: 40% Uniware Allocation
+   STEP E: 45D Shipment & 60D Recall
    ========================================================= */
 
 function runCalculations(normalizedData) {
@@ -70,38 +71,77 @@ function runCalculations(normalizedData) {
     r.finalSkuDw = r.mpDw * r.fcDw;
   });
 
-  console.log("Step 2 (DW) applied");
-
   /* =====================================================
      STEP C: 40% UNIWARE STOCK ALLOCATION
      ===================================================== */
 
-  // ---- 3.1 Allocatable stock per Uniware SKU
   const allocatableByUniware = {};
 
   data.forEach(r => {
     if (r.isClosedStyle) return;
-
     if (!allocatableByUniware[r.uniwareSku]) {
       allocatableByUniware[r.uniwareSku] =
         (r.uniwareStockQty || 0) * 0.4;
     }
   });
 
-  // ---- 3.2 Allocate using FINAL_SKU_DW
   data.forEach(r => {
     if (r.isClosedStyle) {
       r.allocatableQtyForRow = 0;
       return;
     }
 
-    const allocatableUW =
-      allocatableByUniware[r.uniwareSku] || 0;
-
     r.allocatableQtyForRow =
-      allocatableUW * (r.finalSkuDw || 0);
+      (allocatableByUniware[r.uniwareSku] || 0) *
+      (r.finalSkuDw || 0);
   });
 
-  console.log("Step C (40% Uniware allocation) applied");
+  /* =====================================================
+     STEP E: 45D SHIPMENT & 60D RECALL
+     ===================================================== */
+
+  data.forEach(r => {
+    if (r.isClosedStyle) return;
+
+    const drr = r.drr || 0;
+    const fcStock = r.fcStockQty || 0;
+
+    let stockCover =
+      drr > 0 ? fcStock / drr : Infinity;
+
+    r.stockCover = stockCover;
+
+    // ---- RECALL (Priority)
+    if (stockCover > 60) {
+      const maxStock60 = drr * 60;
+      r.recallQty = Math.max(
+        0,
+        Math.floor(fcStock - maxStock60)
+      );
+
+      r.shipmentQty = 0;
+      r.actionType = r.recallQty > 0 ? "RECALL" : "NONE";
+      return;
+    }
+
+    // ---- SHIPMENT
+    if (stockCover < 45) {
+      const targetStock45 = drr * 45;
+      const requiredShipment =
+        Math.ceil(targetStock45 - fcStock);
+
+      r.shipmentQty = Math.max(0, requiredShipment);
+      r.recallQty = 0;
+      r.actionType = r.shipmentQty > 0 ? "SHIP" : "NONE";
+      return;
+    }
+
+    // ---- NO ACTION
+    r.shipmentQty = 0;
+    r.recallQty = 0;
+    r.actionType = "NONE";
+  });
+
+  console.log("Step E (45D / 60D logic) applied");
   return data;
 }
