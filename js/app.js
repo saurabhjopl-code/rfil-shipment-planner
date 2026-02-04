@@ -3,25 +3,17 @@ let CURRENT_MP = "Amazon";
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
 
-/* ============================
-   MP NORMALIZATION
-   ============================ */
-function normalizeMP(mp) {
-  if (!mp) return "";
-  const v = mp.toString().trim().toUpperCase();
-  if (v.includes("AMAZON")) return "Amazon";
-  if (v.includes("FLIPKART")) return "Flipkart";
-  if (v.includes("MYNTRA")) return "Myntra";
-  return "";
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
+  console.log("Starting app...");
+
   const normalized = await ingestAllSheets();
   FINAL_DATA = runCalculations(normalized);
 
-  FINAL_DATA.forEach(r => {
-    r.uiMP = normalizeMP(r.mp);
-  });
+  console.log("TOTAL ROWS:", FINAL_DATA.length);
+
+  // DEBUG: log unique MP values
+  const mpSet = new Set(FINAL_DATA.map(r => (r.mp || "").toString().trim()));
+  console.log("UNIQUE MP VALUES:", [...mpSet]);
 
   renderSummary();
   renderTable("Amazon");
@@ -56,16 +48,22 @@ function renderSummary() {
 function renderTable(mp) {
   CURRENT_MP = mp;
 
-  const rows = FINAL_DATA.filter(r => r.uiMP === mp);
-  const visibleCount = CURRENT_PAGE * PAGE_SIZE;
-  const visibleRows = rows.slice(0, visibleCount);
+  // 🔥 TEMPORARY: DO NOT FILTER BY MP TEXT
+  // This guarantees rows render
+  const rows = FINAL_DATA.filter(r =>
+    r.shipmentQty > 0 ||
+    r.recallQty > 0 ||
+    r.fcStockQty > 0
+  );
+
+  const visibleRows = rows.slice(0, CURRENT_PAGE * PAGE_SIZE);
 
   document.getElementById("table-title").innerText =
     `${mp} – FC Planning (${rows.length} rows, showing ${visibleRows.length})`;
 
   if (!rows.length) {
     document.getElementById("table-container").innerHTML =
-      `<div style="padding:24px;color:#64748b">No data</div>`;
+      `<div style="padding:24px;color:#64748b">No rows to display</div>`;
     return;
   }
 
@@ -73,6 +71,7 @@ function renderTable(mp) {
     <table>
       <thead>
         <tr>
+          <th>MP</th>
           <th>Style</th>
           <th>SKU</th>
           <th>FC</th>
@@ -95,6 +94,7 @@ function renderTable(mp) {
 
     html += `
       <tr>
+        <td>${r.mp || "-"}</td>
         <td>${r.styleId}</td>
         <td>${r.sku}</td>
         <td>${r.warehouseId}</td>
@@ -110,12 +110,10 @@ function renderTable(mp) {
 
   html += `</tbody></table>`;
 
-  if (visibleCount < rows.length) {
+  if (visibleRows.length < rows.length) {
     html += `
       <div style="padding:16px;text-align:center">
-        <button onclick="loadMore()" class="tab">
-          Load more
-        </button>
+        <button class="tab" onclick="loadMore()">Load more</button>
       </div>
     `;
   }
