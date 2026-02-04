@@ -1,186 +1,159 @@
 /* =========================================================
-   calc.js – V1.3.1 (FULL REPLACE HOTFIX)
-   Fixes allocation break while keeping SELLER logic
+   calc.js – FINAL CALCULATION ENGINE (FULL FILE)
    ========================================================= */
 
-const FC_ALLOCATION_RATIO = 0.40;
+function runCalculations(normalizedData) {
+  const data = JSON.parse(JSON.stringify(normalizedData));
 
-const BEST_FC_BY_MP = {
-  "Amazon IN": ["BLR8","HYD3","BOM5","CJB1","DEL5"],
-  "Myntra": ["Bangalore","Mumbai","Bilaspur"],
-  "Flipkart": ["MALUR","KOLKATA","SANPKA","HYDERABAD","BHIWANDI"]
-};
-
-function runCalculations(rows) {
-
-  const data = rows.map(r => ({ ...r }));
-
+  /* ===============================
+     STEP 1: CLOSED STYLE OVERRIDE
+     =============================== */
   data.forEach(r => {
     r.shipmentQty = 0;
     r.recallQty = 0;
-    r.actionType = "NONE";
-    r.shipmentSource = "";
+    r.requiredShipmentQty = 0;
+    r.remark = "";
+    if (r.isClosedStyle) {
+      r.actionType = "CLOSED_RECALL";
+      r.recallQty = r.fcStockQty || 0;
+    }
   });
 
-  const groups = {};
-  const k = (m,s,sku)=>`${m}||${s}||${sku}`;
+  /* ===============================
+     STEP 2: DEMAND WEIGHT
+     =============================== */
+  const totalSaleUW = {};
+  const mpSaleUW = {};
+  const fcSaleUW = {};
 
-  data.forEach(r=>{
-    groups[k(r.mp,r.styleId,r.sku)] ??= [];
-    groups[k(r.mp,r.styleId,r.sku)].push(r);
+  data.forEach(r => {
+    if (r.isClosedStyle) return;
+
+    totalSaleUW[r.uniwareSku] =
+      (totalSaleUW[r.uniwareSku] || 0) + r.totalSale30d;
+
+    mpSaleUW[`${r.uniwareSku}|${r.mp}`] =
+      (mpSaleUW[`${r.uniwareSku}|${r.mp}`] || 0) + r.totalSale30d;
+
+    fcSaleUW[`${r.uniwareSku}|${r.mp}|${r.warehouseId}`] =
+      (fcSaleUW[`${r.uniwareSku}|${r.mp}|${r.warehouseId}`] || 0) +
+      r.sale30dFc;
   });
 
-  Object.values(groups).forEach(group => {
+  data.forEach(r => {
+    if (r.isClosedStyle) {
+      r.finalSkuDw = 0;
+      return;
+    }
+    const t = totalSaleUW[r.uniwareSku] || 0;
+    const m = mpSaleUW[`${r.uniwareSku}|${r.mp}`] || 0;
+    const f = fcSaleUW[`${r.uniwareSku}|${r.mp}|${r.warehouseId}`] || 0;
 
-    const ref = group[0];
+    const mpDw = t > 0 ? m / t : 0;
+    const fcDw = m > 0 ? f / m : 0;
+    r.finalSkuDw = mpDw * fcDw;
+  });
 
-    if (ref.isClosedStyle) {
-      group.forEach(r=>{
-        r.actionType="NONE";
-        r.remark="Style closed – no action";
-      });
+  /* ===============================
+     STEP 3: 40% UNIWARE ALLOCATION
+     =============================== */
+  const allocUW = {};
+  data.forEach(r => {
+    if (r.isClosedStyle) return;
+    if (!allocUW[r.uniwareSku]) {
+      allocUW[r.uniwareSku] = (r.uniwareStockQty || 0) * 0.4;
+    }
+  });
+
+  data.forEach(r => {
+    r.allocatableQtyForRow = r.isClosedStyle
+      ? 0
+      : (allocUW[r.uniwareSku] || 0) * r.finalSkuDw;
+  });
+
+  /* ===============================
+     STEP 4: 45D / 60D LOGIC
+     =============================== */
+  data.forEach(r => {
+    if (r.isClosedStyle) return;
+
+    const drr = r.drr || 0;
+    if (drr === 0) {
+      r.actionType = "NONE";
       return;
     }
 
-    let uniwareStock = ref.uniwareStockQty || 0;
-    let fcPoolTotal = Math.floor(uniwareStock * FC_ALLOCATION_RATIO);
-    let fcPoolRemaining = fcPoolTotal;
+    const cover = r.fcStockQty / drr;
+    r.stockCover = cover;
 
-    const sellerRow = group.find(r=>r.warehouseId==="SELLER");
-    const fcRows = group.filter(r=>r.warehouseId!=="SELLER");
-
-    const sellerSale = sellerRow?.sale30dFc || 0;
-    const fcSale = fcRows.reduce((s,r)=>s+(r.sale30dFc||0),0);
-
-    /* ================= FC RECALL ================= */
-
-    fcRows.forEach(r=>{
-      if (r.stockCover > 60 && r.drr > 0) {
-        const recall = Math.max(0, Math.floor(r.fcStockQty - r.drr * 60));
-        if (recall > 0) {
-          r.recallQty += recall;
-          r.actionType = "RECALL";
-          r.shipmentSource = "FC_RECALL";
-          uniwareStock += recall;
-        }
-      }
-    });
-
-    /* ================= FC REPLENISH ================= */
-
-    fcRows.forEach(r=>{
-      if (r.stockCover < 45 && r.drr > 0 && fcPoolRemaining > 0) {
-        const need = Math.max(0, Math.floor((45 - r.stockCover) * r.drr));
-        const ship = Math.min(need, fcPoolRemaining);
-        if (ship > 0) {
-          r.shipmentQty += ship;
-          if (r.actionType === "NONE") r.actionType = "SHIP";
-          r.shipmentSource ||= "FC_REPLENISHMENT";
-          fcPoolRemaining -= ship;
-          uniwareStock -= ship;
-        }
-      }
-    });
-
-    /* ================= SELLER LOGIC ================= */
-
-    if (sellerSale <= 0 || fcPoolRemaining <= 0) {
-      // no seller processing
+    if (cover > 60) {
+      r.actionType = "RECALL";
+      r.recallQty = Math.floor(r.fcStockQty - drr * 60);
+      return;
     }
 
-    /* ---------- BRANCH A: FC SALE EXISTS ---------- */
-    else if (fcSale > 0) {
-
-      const sellerDW = sellerSale / (sellerSale + fcSale);
-
-      let sellerAlloc = Math.floor(
-        fcPoolRemaining *
-        ref.dwMp *
-        ref.dwStyle *
-        ref.dwSku *
-        sellerDW
-      );
-
-      sellerAlloc = Math.min(sellerAlloc, fcPoolRemaining, uniwareStock);
-      if (sellerAlloc > 0) {
-
-        const strengths = fcRows.map(r=>({
-          r,
-          w: Math.max(r.drr||0, r.dwFc||0)
-        })).filter(x=>x.w>0);
-
-        const totalW = strengths.reduce((s,x)=>s+x.w,0);
-
-        let rem = sellerAlloc;
-
-        strengths.forEach((x,i)=>{
-          const qty = (i===strengths.length-1)
-            ? rem
-            : Math.floor(sellerAlloc * x.w / totalW);
-
-          if (qty > 0) {
-            x.r.shipmentQty += qty;
-            if (x.r.actionType === "NONE") x.r.actionType = "SHIP";
-            x.r.shipmentSource ||= "SELLER_REBALANCE";
-            rem -= qty;
-          }
-        });
-
-        fcPoolRemaining -= sellerAlloc;
-        uniwareStock -= sellerAlloc;
-      }
+    if (cover < 45) {
+      r.actionType = "SHIP";
+      r.requiredShipmentQty = Math.ceil(drr * 45 - r.fcStockQty);
+    } else {
+      r.actionType = "NONE";
     }
-
-    /* ---------- BRANCH B: NO FC SALE (BOOTSTRAP) ---------- */
-    else {
-
-      const best = BEST_FC_BY_MP[ref.mp] || [];
-      const targets = fcRows.filter(r=>best.includes(r.warehouseId));
-      if (!targets.length) return;
-
-      let sellerAlloc = Math.floor(
-        fcPoolRemaining *
-        ref.dwMp *
-        ref.dwStyle *
-        ref.dwSku
-      );
-
-      sellerAlloc = Math.min(sellerAlloc, fcPoolRemaining, uniwareStock);
-      if (sellerAlloc <= 0) return;
-
-      const base = Math.floor(sellerAlloc / targets.length);
-      let rem = sellerAlloc % targets.length;
-
-      targets.forEach(r=>{
-        let qty = base;
-        if (rem > 0) { qty++; rem--; }
-        if (qty > 0) {
-          r.shipmentQty += qty;
-          if (r.actionType === "NONE") r.actionType = "SHIP";
-          r.shipmentSource ||= "SELLER_BOOTSTRAP_BEST_FC";
-        }
-      });
-
-      fcPoolRemaining -= sellerAlloc;
-      uniwareStock -= sellerAlloc;
-    }
-
   });
 
-  /* ================= FINAL REMARKS ================= */
+  /* ===============================
+     STEP 5: FC PRIORITY + FINAL SHIP
+     =============================== */
+  const byUW = {};
+  data.forEach(r => {
+    if (!byUW[r.uniwareSku]) byUW[r.uniwareSku] = [];
+    byUW[r.uniwareSku].push(r);
+  });
 
-  data.forEach(r=>{
-    if (r.actionType==="RECALL") {
-      r.remark="Stock above 60 days – recall";
-    } else if (r.shipmentSource==="SELLER_REBALANCE") {
-      r.remark="Seller demand redistributed to FCs";
-    } else if (r.shipmentSource==="SELLER_BOOTSTRAP_BEST_FC") {
-      r.remark="Bootstrap FC allocation (no FC sale history)";
-    } else if (r.shipmentSource==="FC_REPLENISHMENT") {
-      r.remark="Shipment allocated as per 45-day stock target";
-    } else {
-      r.remark="No action required";
-    }
+  Object.values(byUW).forEach(rows => {
+    const shipRows = rows.filter(r => r.actionType === "SHIP");
+    if (!shipRows.length) return;
+
+    const maxDRR = Math.max(...shipRows.map(r => r.drr || 0));
+    const maxDW = Math.max(...shipRows.map(r => r.finalSkuDw || 0));
+
+    shipRows.forEach(r => {
+      const drrScore = maxDRR ? r.drr / maxDRR : 0;
+      const dwScore = maxDW ? r.finalSkuDw / maxDW : 0;
+      r.priorityScore = Math.max(drrScore, dwScore);
+    });
+
+    shipRows.sort((a, b) => b.priorityScore - a.priorityScore);
+
+    let remaining = allocUW[shipRows[0].uniwareSku] || 0;
+
+    shipRows.forEach(r => {
+      const finalQty = Math.min(
+        remaining,
+        r.allocatableQtyForRow || 0,
+        r.requiredShipmentQty || 0
+      );
+      r.shipmentQty = Math.max(0, Math.floor(finalQty));
+      remaining -= r.shipmentQty;
+    });
+  });
+
+  /* ===============================
+     STEP 6: REMARKS (FINAL)
+     =============================== */
+  data.forEach(r => {
+    if (r.isClosedStyle)
+      r.remark = "Style closed – full stock recall enforced";
+    else if (r.actionType === "RECALL")
+      r.remark = "Stock above 60 days cover – recall required";
+    else if (r.actionType === "SHIP" && r.shipmentQty === 0)
+      r.remark =
+        "Shipment needed but Uniware stock exhausted or FC has lower priority";
+    else if (r.actionType === "SHIP")
+      r.remark = "Shipment allocated as per 45-day stock target";
+    else if ((r.drr || 0) === 0)
+      r.remark = "No recent sales – shipment not planned";
+    else
+      r.remark = "Stock within optimal range";
   });
 
   return data;
