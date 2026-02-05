@@ -1,9 +1,6 @@
 /**
  * APP ORCHESTRATOR
  * VA3.2 — STABLE BASELINE
- *
- * MP planner LOCKED
- * Seller planner SIMPLIFIED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -65,7 +62,6 @@ init();
 
 async function init() {
   try {
-    /* 1️⃣ LOAD */
     const [saleCSV, fcCSV, uniCSV, remarksCSV] =
       await Promise.all([
         loadCSV(SOURCES.sale30D),
@@ -74,25 +70,16 @@ async function init() {
         loadCSV(SOURCES.companyRemarks)
       ]);
 
-    /* 2️⃣ PARSE */
-    const saleRows = parseCSV(saleCSV);
-    const fcRows = parseCSV(fcCSV);
-    const uniRows = parseCSV(uniCSV);
-    const remarksRows = parseCSV(remarksCSV);
+    const sale30D = normalizeSale30D(parseCSV(saleCSV));
+    const fcStock = normalizeFCStock(parseCSV(fcCSV));
+    const uniwareStock = normalizeUniwareStock(parseCSV(uniCSV));
+    const companyRemarks = normalizeCompanyRemarks(parseCSV(remarksCSV));
 
-    /* 3️⃣ NORMALIZE */
-    const sale30D = normalizeSale30D(saleRows);
-    const fcStock = normalizeFCStock(fcRows);
-    const uniwareStock = normalizeUniwareStock(uniRows);
-    const companyRemarks = normalizeCompanyRemarks(remarksRows);
-
-    /* 4️⃣ DERIVE SELLER */
     const { mpSales, sellerSales } = deriveSellerSales({
       sale30D,
       fcStock
     });
 
-    /* 5️⃣ MP PLANNING */
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
     const allMpPlanningRows = [];
@@ -130,7 +117,6 @@ async function init() {
       });
     });
 
-    /* 6️⃣ SELLER PLANNING (SIMPLIFIED) */
     const fallbackFCsByMP = {
       AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
       FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
@@ -157,7 +143,6 @@ async function init() {
       }
     });
 
-    /* 7️⃣ TABS */
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
@@ -178,7 +163,6 @@ async function init() {
 function renderTab(tab, mpViews, sellerView) {
   content.innerHTML = "";
 
-  /* SELLER TAB */
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
     const sections = page.querySelectorAll(".section");
@@ -194,7 +178,7 @@ function renderTab(tab, mpViews, sellerView) {
 
     sections[1].replaceWith(
       renderReportTable({
-        rows: sellerView.reportRows,
+        rows: sellerView.report.rows,   // ✅ FIX
         mode: "SELLER"
       })
     );
@@ -203,7 +187,6 @@ function renderTab(tab, mpViews, sellerView) {
     return;
   }
 
-  /* MP TAB */
   const view = mpViews[tab];
   const page = renderPageShell(tab);
   const sections = page.querySelectorAll(".section");
@@ -261,7 +244,7 @@ function renderTab(tab, mpViews, sellerView) {
 
   sections[5].replaceWith(
     renderReportTable({
-      rows: view.reportRows,
+      rows: view.report.rows,   // ✅ FIX
       includeRecall: true
     })
   );
