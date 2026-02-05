@@ -15,12 +15,12 @@ import {
 } from "../shared/demandWeight.js";
 
 /**
- * MP PLANNER — VA1.0 + DW (OBSERVABILITY ONLY)
+ * MP PLANNER — VA2.0 + Actual Shipment Qty (STEP 1)
  *
+ * ✔ Planning logic unchanged
  * ✔ Shipment logic unchanged
- * ✔ Recall logic unchanged
- * ✔ Style preserved
- * ✔ DW NOT used for decisions
+ * ✔ New field: actualShipmentQty (demand truth)
+ * ✔ No allocation yet
  */
 
 export function planMP({
@@ -102,7 +102,7 @@ export function planMP({
     const totalSkuSale = totalSkuSaleMap.get(row.sku) || 0;
     const mpSkuSale = mpSkuSaleMap.get(row.sku) || 0;
 
-    /* DW calculation (NOT USED) */
+    /* DW (observability only) */
     const mpDW = calculateMPDW(mpSkuSale, totalSkuSale);
     const fcDW = calculateFCDW(row.saleQty, mpSkuSale);
     const finalDW = calculateFinalDW(mpDW, fcDW);
@@ -113,6 +113,7 @@ export function planMP({
     const drr = calculateDRR(row.saleQty);
     const stockCover = calculateStockCover(fcStockQty, drr);
 
+    let actualShipmentQty = 0;
     let shipmentQty = 0;
     let recallQty = 0;
     let action = "NONE";
@@ -124,11 +125,15 @@ export function planMP({
       remarks = "Style Closed";
     } else {
       if (stockCover < TARGET_STOCK_DAYS) {
-        shipmentQty = Math.max(
+        actualShipmentQty = Math.max(
           0,
           TARGET_STOCK_DAYS * drr - fcStockQty
         );
-        action = shipmentQty > 0 ? "SHIP" : "NONE";
+
+        /* STEP 1: shipmentQty = demand */
+        shipmentQty = actualShipmentQty;
+
+        action = actualShipmentQty > 0 ? "SHIP" : "NONE";
       } else if (stockCover > RECALL_THRESHOLD_DAYS) {
         recallQty = Math.max(
           0,
@@ -146,12 +151,17 @@ export function planMP({
       drr: Number(drr.toFixed(2)),
       fcStock: fcStockQty,
       stockCover: Number(stockCover.toFixed(2)),
+
+      /* 🔑 NEW FIELD */
+      actualShipmentQty: Math.floor(actualShipmentQty),
+
+      /* Existing fields unchanged */
       shipmentQty: Math.floor(shipmentQty),
       recallQty: Math.floor(recallQty),
       action,
       remarks,
 
-      /* 🔒 OBSERVABILITY ONLY */
+      /* DW metadata */
       mpDW: Number(mpDW.toFixed(4)),
       fcDW: Number(fcDW.toFixed(4)),
       finalDW: Number(finalDW.toFixed(4))
