@@ -8,19 +8,14 @@ import {
   calculateStockCover
 } from "../shared/metrics.js";
 
-import {
-  calculateMPDW,
-  calculateFCDW,
-  calculateFinalDW
-} from "../shared/demandWeight.js";
-
 /**
- * MP PLANNING CORE — VA.1 (STABLE)
+ * MP PLANNING CORE (PURE)
  *
- * ✔ Style preserved
- * ✔ DW preserved
- * ✔ NO allocation
- * ✔ FC Stock keyed by FC + SKU ONLY
+ * RULES:
+ * - NO Uniware allocation
+ * - NO FC priority
+ * - NO stock limitation
+ * - Computes IDEAL shipment / recall only
  */
 
 export function planMP({
@@ -39,58 +34,37 @@ export function planMP({
   );
 
   /* -----------------------------
-     Aggregate total SKU sales
-  ----------------------------- */
-  const totalSkuSaleMap = new Map();
-  mpSales.forEach(r => {
-    totalSkuSaleMap.set(
-      r.sku,
-      (totalSkuSaleMap.get(r.sku) || 0) + r.qty
-    );
-  });
-
-  /* -----------------------------
-     Aggregate MP SKU sales
-  ----------------------------- */
-  const mpSkuSaleMap = new Map();
-  mpSales
-    .filter(r => r.mp === mp)
-    .forEach(r => {
-      mpSkuSaleMap.set(
-        r.sku,
-        (mpSkuSaleMap.get(r.sku) || 0) + r.qty
-      );
-    });
-
-  /* -----------------------------
-     FC Stock lookup (FC + SKU)
+     FC Stock lookup
   ----------------------------- */
   const fcStockMap = new Map();
   fcStock
     .filter(r => r.mp === mp)
     .forEach(r => {
-      const key = `${r.warehouseId}|${r.sku}`;
+      const key = `${r.warehouseId}|${r.sku}|${r.channelId}`;
       fcStockMap.set(key, r.qty);
     });
 
   /* -----------------------------
-     Aggregate FC–SKU–STYLE sales
+     Aggregate sales FC-wise
   ----------------------------- */
-  const fcSkuStyleSaleMap = new Map();
+  const saleMap = new Map();
 
   mpSales
     .filter(r => r.mp === mp)
     .forEach(r => {
-      const key = `${r.warehouseId}|${r.sku}|${r.style}`;
-      if (!fcSkuStyleSaleMap.has(key)) {
-        fcSkuStyleSaleMap.set(key, {
-          fc: r.warehouseId,
-          sku: r.sku,
+      const key = `${r.warehouseId}|${r.sku}|${r.channelId}`;
+
+      if (!saleMap.has(key)) {
+        saleMap.set(key, {
           style: r.style,
+          sku: r.sku,
+          fc: r.warehouseId,
+          channelId: r.channelId,
           saleQty: 0
         });
       }
-      fcSkuStyleSaleMap.get(key).saleQty += r.qty;
+
+      saleMap.get(key).saleQty += r.qty;
     });
 
   /* -----------------------------
@@ -98,16 +72,11 @@ export function planMP({
   ----------------------------- */
   const planningRows = [];
 
-  fcSkuStyleSaleMap.forEach(row => {
-    const totalSkuSale = totalSkuSaleMap.get(row.sku) || 0;
-    const mpSkuSale = mpSkuSaleMap.get(row.sku) || 0;
-
-    const mpDW = calculateMPDW(mpSkuSale, totalSkuSale);
-    const fcDW = calculateFCDW(row.saleQty, mpSkuSale);
-    const finalDW = calculateFinalDW(mpDW, fcDW);
-
+  saleMap.forEach(row => {
     const fcStockQty =
-      fcStockMap.get(`${row.fc}|${row.sku}`) || 0;
+      fcStockMap.get(
+        `${row.fc}|${row.sku}|${row.channelId}`
+      ) || 0;
 
     const drr = calculateDRR(row.saleQty);
     const stockCover = calculateStockCover(fcStockQty, drr);
@@ -117,6 +86,7 @@ export function planMP({
     let action = "NONE";
     let remarks = "";
 
+    /* Closed style rule */
     if (closedStyles.has(row.style)) {
       recallQty = fcStockQty;
       action = recallQty > 0 ? "RECALL" : "NONE";
@@ -148,10 +118,7 @@ export function planMP({
       shipmentQty: Math.floor(shipmentQty),
       recallQty: Math.floor(recallQty),
       action,
-      remarks,
-      mpDW: Number(mpDW.toFixed(4)),
-      fcDW: Number(fcDW.toFixed(4)),
-      finalDW: Number(finalDW.toFixed(4))
+      remarks
     });
   });
 
