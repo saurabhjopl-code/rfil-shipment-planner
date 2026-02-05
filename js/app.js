@@ -1,6 +1,7 @@
 /**
  * APP ORCHESTRATOR
- * This is the ONLY file allowed to wire data → logic → UI
+ * The ONLY file allowed to wire:
+ * Data → Logic → Summaries → ViewModels → UI
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -16,7 +17,7 @@ import {
 import { deriveSellerSales } from "./domain/seller/sellerDerivation.js";
 import { planMP } from "./domain/mp/mpPlanner.js";
 
-/* 🔴 FIXED IMPORTS */
+/* ===== SUMMARIES ===== */
 import { fcStockSummary } from "./summaries/fcStockSummary.js";
 import { fcSaleSummary } from "./summaries/fcSaleSummary.js";
 import { mpTopSkuSummary } from "./summaries/mpTopSkuSummary.js";
@@ -24,14 +25,15 @@ import { mpTopStyleSummary } from "./summaries/mpTopStyleSummary.js";
 import { shipmentSummary } from "./summaries/shipmentSummary.js";
 import { sellerSummary } from "./summaries/sellerSummary.js";
 
+/* ===== VIEW MODELS ===== */
 import { buildMpView } from "./viewModels/buildMpView.js";
 import { buildSellerView } from "./viewModels/buildSellerView.js";
 
+/* ===== UI ===== */
 import { renderAppHeader } from "./ui/layout/appHeader.js";
 import { renderFiltersBar } from "./ui/layout/filtersBar.js";
 import { renderTabs } from "./ui/layout/tabs.js";
 import { renderPageShell } from "./ui/layout/pageShell.js";
-
 import { renderSummaryTable } from "./ui/render/summaryTables.js";
 import { renderReportTable } from "./ui/render/reportTable.js";
 
@@ -59,7 +61,7 @@ init();
 
 async function init() {
   try {
-    // 1️⃣ Load CSVs
+    /* 1️⃣ LOAD CSVs */
     const [saleCSV, fcStockCSV, uniwareCSV, remarksCSV] =
       await Promise.all([
         loadCSV(SOURCES.sale30D),
@@ -68,25 +70,25 @@ async function init() {
         loadCSV(SOURCES.companyRemarks)
       ]);
 
-    // 2️⃣ Parse
+    /* 2️⃣ PARSE */
     const saleRows = parseCSV(saleCSV);
     const fcStockRows = parseCSV(fcStockCSV);
     const uniwareRows = parseCSV(uniwareCSV);
     const remarksRows = parseCSV(remarksCSV);
 
-    // 3️⃣ Normalize
+    /* 3️⃣ NORMALIZE */
     const sale30D = normalizeSale30D(saleRows);
     const fcStock = normalizeFCStock(fcStockRows);
     const uniwareStock = normalizeUniwareStock(uniwareRows);
     const companyRemarks = normalizeCompanyRemarks(remarksRows);
 
-    // 4️⃣ SELLER derivation
+    /* 4️⃣ SELLER DERIVATION */
     const { mpSales, sellerSales } = deriveSellerSales({
       sale30D,
       fcStock
     });
 
-    // 5️⃣ MP Planning
+    /* 5️⃣ MP PLANNING */
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
 
@@ -103,25 +105,27 @@ async function init() {
 
       remainingUniwareGlobal = mpResult.remainingUniware;
 
+      /* 6️⃣ SUMMARIES (✔ FIXED FC STOCK SOURCE) */
       const summaries = {
-        fcStock: fcStockSummary(mpResult.rows),
+        fcStock: fcStockSummary(fcStock, mp), // ✅ CORRECT
         fcSale: fcSaleSummary(mpResult.rows),
         topSkus: mpTopSkuSummary(mpResult.rows),
         topStyles: mpTopStyleSummary(mpResult.rows),
         shipment: shipmentSummary(mpResult.rows)
       };
 
+      /* 7️⃣ BUILD MP VIEW MODEL */
       mpViews[mp] = buildMpView({
         mp,
         summaries,
         reportRows: mpResult.rows,
         filters: {
-          fcList: [...new Set(mpResult.rows.map(r => r.fc))]
+          fcList: [...new Set(fcStock.filter(r => r.mp === mp).map(r => r.warehouseId))]
         }
       });
     });
 
-    // SELLER placeholder (next phase)
+    /* 8️⃣ SELLER VIEW (PLACEHOLDER – LOGIC COMES LATER) */
     const sellerView = buildSellerView({
       summaries: {
         shipment: sellerSummary({
@@ -134,11 +138,12 @@ async function init() {
       filters: { fcList: [] }
     });
 
-    // Tabs
+    /* 9️⃣ RENDER TABS */
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
 
+    /* DEFAULT TAB */
     renderTab("AMAZON", mpViews, sellerView);
 
   } catch (err) {
@@ -158,6 +163,7 @@ async function init() {
 function renderTab(tab, mpViews, sellerView) {
   content.innerHTML = "";
 
+  /* SELLER TAB */
   if (tab === "SELLER") {
     content.appendChild(renderPageShell("SELLER"));
     return;
@@ -168,6 +174,7 @@ function renderTab(tab, mpViews, sellerView) {
 
   const sections = page.querySelectorAll(".section");
 
+  /* SUMMARY GRID */
   sections[0].replaceWith(
     renderSummaryTable({
       title: "FC Wise Stock",
@@ -202,6 +209,7 @@ function renderTab(tab, mpViews, sellerView) {
     })
   );
 
+  /* SHIPMENT SUMMARY */
   sections[4].replaceWith(
     renderSummaryTable({
       title: "Shipment & Recall Summary",
@@ -218,6 +226,7 @@ function renderTab(tab, mpViews, sellerView) {
     })
   );
 
+  /* REPORT TABLE */
   sections[5].replaceWith(
     renderReportTable({
       rows: view.report.rows,
