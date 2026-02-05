@@ -1,79 +1,78 @@
 /**
- * Renders report table
- * UI ONLY
+ * SUMMARY TABLE RENDERER
+ *
+ * Supports:
+ * - Actual Shipment Qty column
+ * - Grand total calculation
  */
 
-export function renderReportTable({ rows, includeRecall }) {
-  const container = document.createElement("div");
+export function renderSummaryTable({
+  title,
+  columns,
+  rows,
+  showGrandTotal = false
+}) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "summary-block";
 
-  container.innerHTML = `
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>Style</th>
-            <th>SKU</th>
-            <th>FC</th>
-            <th>Sale Qty</th>
-            <th>DRR</th>
-            <th>FC Stock</th>
-            <th>Stock Cover</th>
-            <th>Shipment Qty</th>
-            ${includeRecall ? "<th>Recall Qty</th><th>Action</th>" : ""}
-            <th>Remarks</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows.length === 0
-              ? `<tr><td colspan="${includeRecall ? 11 : 9}" class="empty-state">
-                   No rows to display
-                 </td></tr>`
-              : rows.map(r => renderRow(r, includeRecall)).join("")
-          }
-        </tbody>
-      </table>
-    </div>
+  const h3 = document.createElement("h3");
+  h3.textContent = title;
+  wrapper.appendChild(h3);
 
-    <div class="show-more">
-      <button>Show More</button>
-    </div>
-  `;
+  const table = document.createElement("table");
+  table.className = "summary-table";
 
-  return container;
-}
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
 
-function renderRow(row, includeRecall) {
-  return `
-    <tr>
-      <td>${row.style}</td>
-      <td>${row.sku}</td>
-      <td>${row.fc}</td>
-      <td>${format(row.saleQty)}</td>
-      <td>${format(row.drr)}</td>
-      <td>${format(row.fcStock)}</td>
-      <td>${format(row.stockCover)}</td>
-      <td>${format(row.shipmentQty)}</td>
-      ${
-        includeRecall
-          ? `<td>${format(row.recallQty)}</td>
-             <td>${renderActionBadge(row.action)}</td>`
-          : ""
-      }
-      <td>${row.remarks || "-"}</td>
-    </tr>
-  `;
-}
+  columns.forEach(c => {
+    const th = document.createElement("th");
+    th.textContent = c;
+    trh.appendChild(th);
+  });
 
-function format(val) {
-  if (typeof val === "number") {
-    return Number(val.toFixed(2));
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    columns.forEach(c => {
+      const td = document.createElement("td");
+      td.textContent = r[c] ?? 0;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  /* Grand Total */
+  if (showGrandTotal) {
+    const totalRow = {};
+    columns.forEach(c => {
+      totalRow[c] =
+        c === columns[0]
+          ? "Grand Total"
+          : rows.reduce(
+              (sum, r) => sum + (Number(r[c]) || 0),
+              0
+            ).toFixed(2);
+    });
+
+    const tr = document.createElement("tr");
+    tr.className = "grand-total";
+
+    columns.forEach(c => {
+      const td = document.createElement("td");
+      td.textContent = totalRow[c];
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
   }
-  return val ?? "-";
-}
 
-function renderActionBadge(action) {
-  if (action === "SHIP") return `<span class="badge ship">SHIP</span>`;
-  if (action === "RECALL") return `<span class="badge recall">RECALL</span>`;
-  return `<span class="badge none">NONE</span>`;
+  table.appendChild(tbody);
+  wrapper.appendChild(table);
+
+  return wrapper;
 }
