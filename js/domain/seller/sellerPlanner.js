@@ -1,12 +1,13 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — VA3.4 (CORRECT)
+ * SELLER SHIPMENT PLANNER — VA3.5 (CONSOLIDATED)
  *
  * Guarantees:
+ * - One row per MP + SKU + Style
  * - Shipment ≤ Actual demand
  * - Uniware 40% never exceeded
- * - MP-wise seller distribution works
+ * - No duplicate rows
  */
 
 export function planSellerShipments({
@@ -49,15 +50,37 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     Seller demand grouped by SKU
+     🔑 CONSOLIDATE seller demand
+     (MP + SKU + STYLE)
   ----------------------------- */
-  const sellerBySku = new Map();
+  const consolidated = new Map();
 
   sellerSales.forEach(r => {
     if (closedStyles.has(r.style)) return;
     if (!r.uniwareSku) return;
 
-    const drr = calculateDRR(r.qty);
+    const key = `${r.mp}|${r.sku}|${r.style}|${r.uniwareSku}`;
+
+    if (!consolidated.has(key)) {
+      consolidated.set(key, {
+        mp: r.mp,
+        sku: r.sku,
+        style: r.style,
+        uniwareSku: r.uniwareSku,
+        saleQty: 0
+      });
+    }
+
+    consolidated.get(key).saleQty += r.qty;
+  });
+
+  /* -----------------------------
+     Group consolidated demand by SKU
+  ----------------------------- */
+  const sellerBySku = new Map();
+
+  consolidated.forEach(r => {
+    const drr = calculateDRR(r.saleQty);
     const actualDemand = Math.floor(45 * drr);
     if (actualDemand <= 0) return;
 
@@ -70,7 +93,7 @@ export function planSellerShipments({
       sku: r.sku,
       style: r.style,
       uniwareSku: r.uniwareSku,
-      saleQty: r.qty,
+      saleQty: r.saleQty,
       actualShipmentQty: actualDemand
     });
   });
@@ -92,16 +115,15 @@ export function planSellerShipments({
     if (remainingPool <= 0) return;
 
     const totalSellerSale = demands.reduce(
-      (s, d) => s + d.saleQty,
+      (sum, d) => sum + d.saleQty,
       0
     );
-
     if (totalSellerSale <= 0) return;
 
     demands.forEach(d => {
       const dw = d.saleQty / totalSellerSale;
-      let allocated = remainingPool * dw;
 
+      let allocated = remainingPool * dw;
       allocated =
         allocated > 0 && allocated < 1
           ? 1
