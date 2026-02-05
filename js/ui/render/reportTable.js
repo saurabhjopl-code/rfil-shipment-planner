@@ -1,9 +1,8 @@
 /**
  * Renders report table
- * @param {Object} config
- * @param {Array<Object>} config.rows
- * @param {boolean} config.includeRecall
+ * UI ONLY
  */
+
 export function renderReportTable({ rows, includeRecall }) {
   const container = document.createElement("div");
 
@@ -50,20 +49,27 @@ function renderRow(row, includeRecall) {
       <td>${row.style}</td>
       <td>${row.sku}</td>
       <td>${row.fc}</td>
-      <td>${row.saleQty}</td>
-      <td>${row.drr}</td>
-      <td>${row.fcStock}</td>
-      <td>${row.stockCover}</td>
-      <td>${row.shipmentQty}</td>
+      <td>${format(row.saleQty)}</td>
+      <td>${format(row.drr)}</td>
+      <td>${format(row.fcStock)}</td>
+      <td>${format(row.stockCover)}</td>
+      <td>${format(row.shipmentQty)}</td>
       ${
         includeRecall
-          ? `<td>${row.recallQty}</td>
+          ? `<td>${format(row.recallQty)}</td>
              <td>${renderActionBadge(row.action)}</td>`
           : ""
       }
       <td>${row.remarks || "-"}</td>
     </tr>
   `;
+}
+
+function format(val) {
+  if (typeof val === "number") {
+    return Number(val.toFixed(2));
+  }
+  return val ?? "-";
 }
 
 function renderActionBadge(action) {
