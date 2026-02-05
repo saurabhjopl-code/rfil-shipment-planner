@@ -1,13 +1,12 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — VA3.0 FIXED
+ * SELLER SHIPMENT PLANNER — VA3.0 FINAL FIX
  *
- * ✔ Uniware consolidated by Uniware SKU
- * ✔ Fallback SKU → Uniware SKU mapping added
- * ✔ Actual Shipment Qty preserved
- * ✔ Shipment Qty now works
- * ✔ No MP impact
+ * ✔ Uniware consolidated
+ * ✔ DW-based allocation
+ * ✔ Minimum 1-unit safeguard
+ * ✔ MP untouched
  */
 
 export function planSellerShipments({
@@ -27,7 +26,7 @@ export function planSellerShipments({
   );
 
   /* -----------------------------
-     Uniware stock by Uniware SKU (CONSOLIDATED)
+     Uniware stock by Uniware SKU
   ----------------------------- */
   const uniwareByUniSku = new Map();
   uniwareStock.forEach(r => {
@@ -39,37 +38,23 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     SKU → Uniware SKU fallback map (from MP data)
-  ----------------------------- */
-  const skuToUniwareSku = new Map();
-  mpPlanningRows.forEach(r => {
-    if (r.sku && r.uniwareSku) {
-      skuToUniwareSku.set(r.sku, r.uniwareSku);
-    }
-  });
-
-  /* -----------------------------
      Seller demand by SKU
   ----------------------------- */
   const sellerDemand = new Map();
 
   sellerSales.forEach(r => {
     if (closedStyles.has(r.style)) return;
+    if (!r.uniwareSku) return;
 
     const drr = calculateDRR(r.qty);
     const actualShipmentQty = Math.floor(45 * drr);
     if (actualShipmentQty <= 0) return;
 
-    const uniwareSku =
-      r.uniwareSku || skuToUniwareSku.get(r.sku);
-
-    if (!uniwareSku) return; // cannot allocate without mapping
-
     if (!sellerDemand.has(r.sku)) {
       sellerDemand.set(r.sku, {
         sku: r.sku,
+        uniwareSku: r.uniwareSku,
         style: r.style,
-        uniwareSku,
         saleQty: 0,
         actualShipmentQty: 0
       });
@@ -81,7 +66,7 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     MP + Seller total sale by SKU (for DW)
+     MP + Seller sale totals (for DW)
   ----------------------------- */
   const totalSaleBySku = new Map();
 
@@ -118,8 +103,19 @@ export function planSellerShipments({
 
     const sellerDW = demand.saleQty / totalSale;
 
-    const shipmentQty = Math.min(
-      Math.floor(allocatable * sellerDW),
+    let shipmentQty = Math.floor(allocatable * sellerDW);
+
+    /* 🔑 MINIMUM ALLOCATION SAFEGUARD (SELLER ONLY) */
+    if (
+      shipmentQty === 0 &&
+      allocatable > 0 &&
+      demand.actualShipmentQty > 0
+    ) {
+      shipmentQty = 1;
+    }
+
+    shipmentQty = Math.min(
+      shipmentQty,
       demand.actualShipmentQty
     );
 
