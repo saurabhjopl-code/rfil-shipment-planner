@@ -1,12 +1,12 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — STEP 2
+ * SELLER SHIPMENT PLANNER — STEP 2 (FIXED, NON-DESTRUCTIVE)
  *
  * ✔ SKU-wise Uniware 40% allocation
  * ✔ DW-based MP split
  * ✔ Seller allocation only
- * ✔ No MP impact
+ * ✔ MP untouched
  */
 
 export function planSellerShipments({
@@ -26,18 +26,18 @@ export function planSellerShipments({
   );
 
   /* -----------------------------
-     Uniware stock by SKU
+     Uniware stock by Uniware SKU
   ----------------------------- */
-  const uniwareBySku = new Map();
+  const uniwareByUniSku = new Map();
   uniwareStock.forEach(r => {
-    uniwareBySku.set(
-      r.sku,
-      (uniwareBySku.get(r.sku) || 0) + r.qty
+    uniwareByUniSku.set(
+      r.uniwareSku,
+      (uniwareByUniSku.get(r.uniwareSku) || 0) + r.qty
     );
   });
 
   /* -----------------------------
-     Seller demand by SKU
+     Seller demand by SKU + Uniware SKU
   ----------------------------- */
   const sellerDemand = new Map();
 
@@ -46,19 +46,20 @@ export function planSellerShipments({
 
     const drr = calculateDRR(r.qty);
     const actualShipmentQty = Math.floor(45 * drr);
-
     if (actualShipmentQty <= 0) return;
 
-    if (!sellerDemand.has(r.sku)) {
-      sellerDemand.set(r.sku, {
+    const key = `${r.sku}|${r.uniwareSku}`;
+    if (!sellerDemand.has(key)) {
+      sellerDemand.set(key, {
         sku: r.sku,
+        uniwareSku: r.uniwareSku,
         style: r.style,
         saleQty: 0,
         actualShipmentQty: 0
       });
     }
 
-    const row = sellerDemand.get(r.sku);
+    const row = sellerDemand.get(key);
     row.saleQty += r.qty;
     row.actualShipmentQty += actualShipmentQty;
   });
@@ -67,6 +68,7 @@ export function planSellerShipments({
      MP + Seller sale totals (for DW)
   ----------------------------- */
   const totalSaleBySku = new Map();
+
   mpPlanningRows.forEach(r => {
     totalSaleBySku.set(
       r.sku,
@@ -87,7 +89,8 @@ export function planSellerShipments({
   const rows = [];
 
   sellerDemand.forEach(demand => {
-    const uniwareQty = uniwareBySku.get(demand.sku) || 0;
+    const uniwareQty =
+      uniwareByUniSku.get(demand.uniwareSku) || 0;
     if (uniwareQty <= 0) return;
 
     const allocatable = Math.floor(uniwareQty * 0.4);
@@ -96,8 +99,7 @@ export function planSellerShipments({
     const totalSale = totalSaleBySku.get(demand.sku) || 0;
     if (totalSale <= 0) return;
 
-    const sellerSale = demand.saleQty;
-    const sellerDW = sellerSale / totalSale;
+    const sellerDW = demand.saleQty / totalSale;
 
     const sellerAllocation = Math.min(
       Math.floor(allocatable * sellerDW),
@@ -145,7 +147,5 @@ export function planSellerShipments({
     });
   });
 
-  return {
-    rows
-  };
+  return { rows };
 }
