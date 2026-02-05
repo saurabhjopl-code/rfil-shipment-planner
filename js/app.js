@@ -1,10 +1,9 @@
 /**
  * APP ORCHESTRATOR
- * VA1.0 + SELLER WIRED
- * STEP 5 — Unified SKU Pool Reconciliation
+ * VA3.2 — STABLE BASELINE
  *
  * MP planner LOCKED
- * Seller planner LOCKED
+ * Seller planner SIMPLIFIED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -131,7 +130,7 @@ async function init() {
       });
     });
 
-    /* 6️⃣ SELLER PLANNING */
+    /* 6️⃣ SELLER PLANNING (SIMPLIFIED) */
     const fallbackFCsByMP = {
       AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
       FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
@@ -144,39 +143,6 @@ async function init() {
       companyRemarks,
       mpPlanningRows: allMpPlanningRows,
       fallbackFCsByMP
-    });
-
-    /* =============================
-       🔒 STEP 5 — UNIFIED SKU POOL
-       MP priority, Seller scaled
-    ============================= */
-
-    const uniwareBySku = new Map();
-    uniwareStock.forEach(r => {
-      uniwareBySku.set(
-        r.sku,
-        (uniwareBySku.get(r.sku) || 0) + r.qty
-      );
-    });
-
-    const mpShipmentBySku = new Map();
-    allMpPlanningRows.forEach(r => {
-      mpShipmentBySku.set(
-        r.sku,
-        (mpShipmentBySku.get(r.sku) || 0) + r.shipmentQty
-      );
-    });
-
-    sellerResult.rows.forEach(r => {
-      const uniwareQty = uniwareBySku.get(r.sku) || 0;
-      const cap = Math.floor(uniwareQty * 0.4);
-      const mpUsed = mpShipmentBySku.get(r.sku) || 0;
-      const remaining = Math.max(0, cap - mpUsed);
-
-      if (r.shipmentQty > remaining) {
-        r.shipmentQty = remaining;
-        r.remarks = "Reduced due to MP priority (40% Uniware cap)";
-      }
     });
 
     const sellerView = buildSellerView({
@@ -212,6 +178,7 @@ async function init() {
 function renderTab(tab, mpViews, sellerView) {
   content.innerHTML = "";
 
+  /* SELLER TAB */
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
     const sections = page.querySelectorAll(".section");
@@ -219,10 +186,7 @@ function renderTab(tab, mpViews, sellerView) {
     sections[0].replaceWith(
       renderSummaryTable({
         title: "Seller Shipment Summary",
-        columns: [
-          "Total Seller Sale",
-          "Shipment Qty"
-        ],
+        columns: ["Total Seller Sale", "Shipment Qty"],
         rows: sellerView.summaries.shipment,
         showGrandTotal: false
       })
@@ -230,10 +194,8 @@ function renderTab(tab, mpViews, sellerView) {
 
     sections[1].replaceWith(
       renderReportTable({
-  rows: sellerView.report.rows,
-  mode: "SELLER"
-})
-
+        rows: sellerView.reportRows,
+        mode: "SELLER"
       })
     );
 
@@ -241,6 +203,7 @@ function renderTab(tab, mpViews, sellerView) {
     return;
   }
 
+  /* MP TAB */
   const view = mpViews[tab];
   const page = renderPageShell(tab);
   const sections = page.querySelectorAll(".section");
@@ -298,11 +261,10 @@ function renderTab(tab, mpViews, sellerView) {
 
   sections[5].replaceWith(
     renderReportTable({
-      rows: view.report.rows,
+      rows: view.reportRows,
       includeRecall: true
     })
   );
 
   content.appendChild(page);
 }
-
