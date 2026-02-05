@@ -1,44 +1,58 @@
 /**
  * REPORT TABLE RENDERER
  *
- * Restores:
- * - VA1.0 Action coloring (on TD)
- * - Actual Shipment Qty column
+ * Supports:
+ * - MP mode (default)
+ * - SELLER mode (simplified)
  */
 
 export function renderReportTable({
   rows,
-  includeRecall = true
+  includeRecall = true,
+  mode = "MP" // "MP" or "SELLER"
 }) {
   const table = document.createElement("table");
   table.className = "report-table";
 
   const thead = document.createElement("thead");
-  const trh = document.createElement("tr");
+  const headerRow = document.createElement("tr");
 
-  const headers = [
-    "Style",
-    "SKU",
-    "FC",
-    "Sale Qty",
-    "DRR",
-    "FC Stock",
-    "Stock Cover",
-    "Actual Shipment Qty",
-    "Shipment Qty"
-  ];
-
-  if (includeRecall) headers.push("Recall Qty");
-
-  headers.push("Action", "Remarks");
+  const headers =
+    mode === "SELLER"
+      ? [
+          "Style",
+          "SKU",
+          "MP",
+          "FC",
+          "Sale Qty",
+          "DRR",
+          "Actual Shipment Qty",
+          "Shipment Qty",
+          "Action",
+          "Remarks"
+        ]
+      : [
+          "Style",
+          "SKU",
+          "FC",
+          "Sale Qty",
+          "DRR",
+          "FC Stock",
+          "Stock Cover",
+          "Actual Shipment Qty",
+          "Shipment Qty",
+          "Recall Qty",
+          "Action",
+          "Remarks"
+        ];
 
   headers.forEach(h => {
     const th = document.createElement("th");
     th.textContent = h;
-    trh.appendChild(th);
+    headerRow.appendChild(th);
   });
 
-  thead.appendChild(trh);
+  thead.appendChild(headerRow);
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
@@ -46,51 +60,45 @@ export function renderReportTable({
   rows.forEach(r => {
     const tr = document.createElement("tr");
 
-    const values = [
-      r.style,
-      r.sku,
-      r.fc,
-      r.saleQty,
-      r.drr,
-      r.fcStock,
-      r.stockCover,
-      r.actualShipmentQty ?? 0,
-      r.shipmentQty
-    ];
+    const cells =
+      mode === "SELLER"
+        ? [
+            r.style,
+            r.sku,
+            r.mp,
+            r.fc,
+            r.saleQty,
+            r.drr,
+            r.actualShipmentQty,
+            r.shipmentQty,
+            r.action,
+            r.remarks
+          ]
+        : [
+            r.style,
+            r.sku,
+            r.fc,
+            r.saleQty,
+            r.drr,
+            r.fcStock,
+            r.stockCover,
+            r.actualShipmentQty,
+            r.shipmentQty,
+            r.recallQty,
+            r.action,
+            r.remarks
+          ];
 
-    if (includeRecall) values.push(r.recallQty);
-
-    values.push(r.action);
-
-    let remarks = r.remarks || "";
-    if (
-      r.action === "SHIP" &&
-      r.shipmentQty < (r.actualShipmentQty || 0)
-    ) {
-      remarks = remarks
-        ? `${remarks} | Partial (DW / Uniware 40%)`
-        : "Partial (DW / Uniware 40%)";
-    }
-
-    values.push(remarks);
-
-    values.forEach((v, idx) => {
+    cells.forEach(val => {
       const td = document.createElement("td");
-      td.textContent = v;
-
-      /* Restore VA1.0 coloring */
-      if (headers[idx] === "Action") {
-        td.classList.add(
-          r.action === "SHIP"
-            ? "ship"
-            : r.action === "RECALL"
-            ? "recall"
-            : "none"
-        );
-      }
-
+      td.textContent = val ?? "";
       tr.appendChild(td);
     });
+
+    /* Action color */
+    if (r.action === "SHIP") tr.classList.add("row-ship");
+    if (r.action === "RECALL") tr.classList.add("row-recall");
+    if (r.action === "NONE") tr.classList.add("row-none");
 
     tbody.appendChild(tr);
   });
@@ -98,6 +106,3 @@ export function renderReportTable({
   table.appendChild(tbody);
   return table;
 }
-
-/* Backward compatibility */
-export default renderReportTable;
