@@ -1,36 +1,41 @@
 /**
- * Shipment & Recall Summary
- * Input: mpPlanningRows[]
+ * SHIPMENT & RECALL SUMMARY
+ *
+ * Adds:
+ * - Actual Shipment Qty (demand)
+ * Keeps:
+ * - Shipment Qty (allocated)
+ * - Recall Qty
  */
 
-export function shipmentSummary(mpRows) {
+export function shipmentSummary(rows) {
   const map = new Map();
 
-  mpRows.forEach(r => {
-    const fc = r.fc;
-
-    if (!map.has(fc)) {
-      map.set(fc, {
-        stock: 0,
-        sale: 0,
-        ship: 0,
-        recall: 0
+  rows.forEach(r => {
+    if (!map.has(r.fc)) {
+      map.set(r.fc, {
+        FC: r.fc,
+        "Total Stock": 0,
+        "Total Sale": 0,
+        DRR: 0,
+        "Actual Shipment Qty": 0,
+        "Shipment Qty": 0,
+        "Recall Qty": 0
       });
     }
 
-    const entry = map.get(fc);
-    entry.stock += Number(r.fcStock) || 0;
-    entry.sale += Number(r.saleQty) || 0;
-    entry.ship += Number(r.shipmentQty) || 0;
-    entry.recall += Number(r.recallQty) || 0;
+    const row = map.get(r.fc);
+
+    row["Total Stock"] += r.fcStock || 0;
+    row["Total Sale"] += r.saleQty || 0;
+    row["Actual Shipment Qty"] += r.actualShipmentQty || 0;
+    row["Shipment Qty"] += r.shipmentQty || 0;
+    row["Recall Qty"] += r.recallQty || 0;
   });
 
-  return Array.from(map.entries()).map(([fc, v]) => ({
-    FC: fc,
-    "Total Stock": v.stock,
-    "Total Sale": v.sale,
-    DRR: Number((v.sale / 30).toFixed(2)),
-    "Shipment Qty": v.ship,
-    "Recall Qty": v.recall
-  }));
+  map.forEach(row => {
+    row.DRR = Number((row["Total Sale"] / 30).toFixed(2));
+  });
+
+  return Array.from(map.values());
 }
