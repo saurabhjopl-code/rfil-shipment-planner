@@ -1,7 +1,8 @@
 /**
  * APP ORCHESTRATOR
- * The ONLY file allowed to wire:
- * Data → Logic → Summaries → ViewModels → UI
+ * VA.1 LOCKED
+ * MP logic untouched
+ * SELLER wired cleanly
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -16,6 +17,7 @@ import {
 
 import { deriveSellerSales } from "./domain/seller/sellerDerivation.js";
 import { planMP } from "./domain/mp/mpPlanner.js";
+import { planSellerShipments } from "./domain/seller/sellerPlanner.js";
 
 /* ===== SUMMARIES ===== */
 import { fcStockSummary } from "./summaries/fcStockSummary.js";
@@ -61,7 +63,7 @@ init();
 
 async function init() {
   try {
-    /* 1️⃣ LOAD CSVs */
+    /* 1️⃣ LOAD */
     const [saleCSV, fcStockCSV, uniwareCSV, remarksCSV] =
       await Promise.all([
         loadCSV(SOURCES.sale30D),
@@ -91,33 +93,27 @@ async function init() {
     /* 5️⃣ MP PLANNING */
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
-
-    let remainingUniwareGlobal = 0;
+    const allMpPlanningRows = [];
 
     MPs.forEach(mp => {
       const mpResult = planMP({
         mp,
         mpSales,
         fcStock,
-        uniwareStock,
         companyRemarks
       });
 
-      remainingUniwareGlobal = mpResult.remainingUniware;
+      allMpPlanningRows.push(...mpResult.rows);
 
-      /* 6️⃣ SUMMARIES (✔ ALL SOURCES CORRECT) */
-      const summaries = {
-        fcStock: fcStockSummary(fcStock, mp),
-        fcSale: fcSaleSummary(mpResult.rows, fcStock, mp),
-        topSkus: mpTopSkuSummary(mpResult.rows),
-        topStyles: mpTopStyleSummary(mpResult.rows),
-        shipment: shipmentSummary(mpResult.rows)
-      };
-
-      /* 7️⃣ BUILD MP VIEW MODEL */
       mpViews[mp] = buildMpView({
         mp,
-        summaries,
+        summaries: {
+          fcStock: fcStockSummary(fcStock, mp),
+          fcSale: fcSaleSummary(mpResult.rows, fcStock, mp),
+          topSkus: mpTopSkuSummary(mpResult.rows),
+          topStyles: mpTopStyleSummary(mpResult.rows),
+          shipment: shipmentSummary(mpResult.rows)
+        },
         reportRows: mpResult.rows,
         filters: {
           fcList: [
@@ -131,32 +127,47 @@ async function init() {
       });
     });
 
-    /* 8️⃣ SELLER VIEW (PLACEHOLDER – LOGIC COMES LATER) */
+    /* 6️⃣ SELLER PLANNING */
+    const fallbackFCsByMP = {
+      AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
+      MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"],
+      FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"]
+    };
+
+    const sellerResult = planSellerShipments({
+      sellerSales,
+      uniwareStock,
+      companyRemarks,
+      mpPlanningRows: allMpPlanningRows,
+      fallbackFCsByMP
+    });
+
     const sellerView = buildSellerView({
       summaries: {
         shipment: sellerSummary({
-          sellerRows: [],
-          uniwareUsed: 0,
-          remainingUniware: remainingUniwareGlobal
+          sellerRows: sellerResult.rows,
+          uniwareUsed: sellerResult.uniwareUsed,
+          remainingUniware: sellerResult.remainingUniware
         })
       },
-      reportRows: [],
-      filters: { fcList: [] }
+      reportRows: sellerResult.rows,
+      filters: {
+        fcList: [...new Set(sellerResult.rows.map(r => r.fc))]
+      }
     });
 
-    /* 9️⃣ RENDER TABS */
+    /* 7️⃣ TABS */
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
 
-    /* DEFAULT TAB */
     renderTab("AMAZON", mpViews, sellerView);
 
   } catch (err) {
     console.error(err);
     content.innerHTML = `
       <div style="padding:16px;color:red">
-        Failed to load app. Check console for errors.
+        Failed to load app. Check console.
       </div>
     `;
   }
@@ -171,16 +182,42 @@ function renderTab(tab, mpViews, sellerView) {
 
   /* SELLER TAB */
   if (tab === "SELLER") {
-    content.appendChild(renderPageShell("SELLER"));
+    const page = renderPageShell("SELLER");
+
+    const sections = page.querySelectorAll(".section");
+
+    /* Seller Summary */
+    sections[0].replaceWith(
+      renderSummaryTable({
+        title: "Seller Shipment Summary",
+        columns: [
+          "Total Seller Sale",
+          "Shipment Qty",
+          "Uniware Used",
+          "Remaining Uniware"
+        ],
+        rows: sellerView.summaries.shipment,
+        showGrandTotal: false
+      })
+    );
+
+    /* Seller Report */
+    sections[1].replaceWith(
+      renderReportTable({
+        rows: sellerView.report.rows,
+        includeRecall: false
+      })
+    );
+
+    content.appendChild(page);
     return;
   }
 
+  /* MP TAB */
   const view = mpViews[tab];
   const page = renderPageShell(tab);
-
   const sections = page.querySelectorAll(".section");
 
-  /* SUMMARY GRID */
   sections[0].replaceWith(
     renderSummaryTable({
       title: "FC Wise Stock",
@@ -215,7 +252,6 @@ function renderTab(tab, mpViews, sellerView) {
     })
   );
 
-  /* SHIPMENT SUMMARY */
   sections[4].replaceWith(
     renderSummaryTable({
       title: "Shipment & Recall Summary",
@@ -232,7 +268,6 @@ function renderTab(tab, mpViews, sellerView) {
     })
   );
 
-  /* REPORT TABLE */
   sections[5].replaceWith(
     renderReportTable({
       rows: view.report.rows,
