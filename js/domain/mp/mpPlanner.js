@@ -15,19 +15,20 @@ import {
 } from "../shared/demandWeight.js";
 
 /**
- * MP PLANNER — VA2.0 + Actual Shipment Qty (STEP 1)
+ * MP PLANNER — STEP 4
  *
- * ✔ Planning logic unchanged
- * ✔ Shipment logic unchanged
- * ✔ New field: actualShipmentQty (demand truth)
- * ✔ No allocation yet
+ * - actualShipmentQty = true demand
+ * - shipmentQty      = DW-allocated (40% Uniware cap)
+ * - Recall logic unchanged
+ * - Action logic unchanged
  */
 
 export function planMP({
   mp,
   mpSales,
   fcStock,
-  companyRemarks
+  companyRemarks,
+  uniwareStock = []   // OPTIONAL (safe default)
 }) {
   /* -----------------------------
      Closed styles
@@ -39,7 +40,23 @@ export function planMP({
   );
 
   /* -----------------------------
-     Total SKU sale (global)
+     Uniware stock by SKU (40%)
+  ----------------------------- */
+  const uniwareBySku = new Map();
+  uniwareStock.forEach(r => {
+    uniwareBySku.set(
+      r.sku,
+      (uniwareBySku.get(r.sku) || 0) + r.qty
+    );
+  });
+
+  const allocatableBySku = new Map();
+  uniwareBySku.forEach((qty, sku) => {
+    allocatableBySku.set(sku, Math.floor(qty * 0.4));
+  });
+
+  /* -----------------------------
+     Total SKU sale (ALL MPs)
   ----------------------------- */
   const totalSkuSaleMap = new Map();
   mpSales.forEach(r => {
@@ -69,8 +86,7 @@ export function planMP({
   fcStock
     .filter(r => r.mp === mp)
     .forEach(r => {
-      const key = `${r.warehouseId}|${r.sku}`;
-      fcStockMap.set(key, r.qty);
+      fcStockMap.set(`${r.warehouseId}|${r.sku}`, r.qty);
     });
 
   /* -----------------------------
@@ -94,19 +110,25 @@ export function planMP({
     });
 
   /* -----------------------------
-     Build planning rows
+     MP-level allocation envelope
+  ----------------------------- */
+  const mpAllocBySku = new Map();
+
+  mpSkuSaleMap.forEach((mpSale, sku) => {
+    const totalSale = totalSkuSaleMap.get(sku) || 0;
+    const pool = allocatableBySku.get(sku) || 0;
+    if (totalSale > 0 && pool > 0) {
+      const mpDW = mpSale / totalSale;
+      mpAllocBySku.set(sku, Math.floor(pool * mpDW));
+    }
+  });
+
+  /* -----------------------------
+     Build rows
   ----------------------------- */
   const rows = [];
 
   fcSkuStyleMap.forEach(row => {
-    const totalSkuSale = totalSkuSaleMap.get(row.sku) || 0;
-    const mpSkuSale = mpSkuSaleMap.get(row.sku) || 0;
-
-    /* DW (observability only) */
-    const mpDW = calculateMPDW(mpSkuSale, totalSkuSale);
-    const fcDW = calculateFCDW(row.saleQty, mpSkuSale);
-    const finalDW = calculateFinalDW(mpDW, fcDW);
-
     const fcStockQty =
       fcStockMap.get(`${row.fc}|${row.sku}`) || 0;
 
@@ -130,8 +152,17 @@ export function planMP({
           TARGET_STOCK_DAYS * drr - fcStockQty
         );
 
-        /* STEP 1: shipmentQty = demand */
-        shipmentQty = actualShipmentQty;
+        /* MP allocation cap (SKU-level) */
+        const mpCap = mpAllocBySku.get(row.sku) || 0;
+
+        shipmentQty = Math.min(
+          Math.floor(actualShipmentQty),
+          mpCap
+        );
+
+        if (shipmentQty < actualShipmentQty) {
+          remarks = "DW / Uniware 40% constraint";
+        }
 
         action = actualShipmentQty > 0 ? "SHIP" : "NONE";
       } else if (stockCover > RECALL_THRESHOLD_DAYS) {
@@ -143,6 +174,13 @@ export function planMP({
       }
     }
 
+    /* DW metadata */
+    const totalSkuSale = totalSkuSaleMap.get(row.sku) || 0;
+    const mpSkuSale = mpSkuSaleMap.get(row.sku) || 0;
+    const mpDW = calculateMPDW(mpSkuSale, totalSkuSale);
+    const fcDW = calculateFCDW(row.saleQty, mpSkuSale);
+    const finalDW = calculateFinalDW(mpDW, fcDW);
+
     rows.push({
       style: row.style,
       sku: row.sku,
@@ -151,25 +189,9 @@ export function planMP({
       drr: Number(drr.toFixed(2)),
       fcStock: fcStockQty,
       stockCover: Number(stockCover.toFixed(2)),
-
-      /* 🔑 NEW FIELD */
       actualShipmentQty: Math.floor(actualShipmentQty),
-
-      /* Existing fields unchanged */
       shipmentQty: Math.floor(shipmentQty),
       recallQty: Math.floor(recallQty),
       action,
       remarks,
-
-      /* DW metadata */
-      mpDW: Number(mpDW.toFixed(4)),
-      fcDW: Number(fcDW.toFixed(4)),
-      finalDW: Number(finalDW.toFixed(4))
-    });
-  });
-
-  return {
-    mp,
-    rows
-  };
-}
+      mpDW: Number
