@@ -1,8 +1,5 @@
 /* =========================================================
-   app.js – V1.2.3 (FULL REPLACE)
-   Fixes:
-   - Toggle FC Summary reliability
-   - FC Summary auto-refresh on MP change
+   app.js – V1.2.3 (FULL REPLACE – SELLER MP FIX)
    ========================================================= */
 
 let FINAL_DATA = [];
@@ -49,7 +46,19 @@ function buildMPTabs(){
   const c=document.getElementById("mp-tabs");
   c.innerHTML="";
 
-  [...new Set(FINAL_DATA.map(r=>r.mp))].forEach((mp,i)=>{
+  /* 🔒 SAFE MP DERIVATION (SELLER GUARANTEED) */
+  let mps = [...new Set(
+    FINAL_DATA
+      .map(r => r.mp)
+      .filter(mp => typeof mp === "string" && mp.trim() !== "")
+  )];
+
+  /* ensure SELLER is present if rows exist */
+  if (FINAL_DATA.some(r => r.mp === "SELLER") && !mps.includes("SELLER")) {
+    mps.push("SELLER");
+  }
+
+  mps.forEach((mp,i)=>{
     const b=document.createElement("button");
     b.className="tab"+(i===0?" active":"");
     b.innerText=mp;
@@ -62,7 +71,6 @@ function buildMPTabs(){
 
       renderTable(mp);
 
-      /* 🔥 FIX: auto-refresh FC summary if visible */
       if(FC_SUMMARY_VISIBLE){
         renderMPSummary(mp);
       }
