@@ -1,13 +1,9 @@
 /**
  * REPORT TABLE RENDERER
  *
- * - MP report (with Recall)
- * - Seller report (no Recall)
- * - Supports Actual Shipment Qty
- *
- * IMPORTANT:
- * Exports BOTH named + default
- * to remain compatible with VA2.0 app.js
+ * Restores:
+ * - VA1.0 Action coloring (on TD)
+ * - Actual Shipment Qty column
  */
 
 export function renderReportTable({
@@ -18,7 +14,7 @@ export function renderReportTable({
   table.className = "report-table";
 
   const thead = document.createElement("thead");
-  const tr = document.createElement("tr");
+  const trh = document.createElement("tr");
 
   const headers = [
     "Style",
@@ -39,10 +35,10 @@ export function renderReportTable({
   headers.forEach(h => {
     const th = document.createElement("th");
     th.textContent = h;
-    tr.appendChild(th);
+    trh.appendChild(th);
   });
 
-  thead.appendChild(tr);
+  thead.appendChild(trh);
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
@@ -50,7 +46,7 @@ export function renderReportTable({
   rows.forEach(r => {
     const tr = document.createElement("tr");
 
-    const cells = [
+    const values = [
       r.style,
       r.sku,
       r.fc,
@@ -62,9 +58,9 @@ export function renderReportTable({
       r.shipmentQty
     ];
 
-    if (includeRecall) cells.push(r.recallQty);
+    if (includeRecall) values.push(r.recallQty);
 
-    cells.push(r.action);
+    values.push(r.action);
 
     let remarks = r.remarks || "";
     if (
@@ -76,21 +72,25 @@ export function renderReportTable({
         : "Partial (DW / Uniware 40%)";
     }
 
-    cells.push(remarks);
+    values.push(remarks);
 
-    cells.forEach(v => {
+    values.forEach((v, idx) => {
       const td = document.createElement("td");
       td.textContent = v;
+
+      /* Restore VA1.0 coloring */
+      if (headers[idx] === "Action") {
+        td.classList.add(
+          r.action === "SHIP"
+            ? "ship"
+            : r.action === "RECALL"
+            ? "recall"
+            : "none"
+        );
+      }
+
       tr.appendChild(td);
     });
-
-    tr.classList.add(
-      r.action === "SHIP"
-        ? "row-ship"
-        : r.action === "RECALL"
-        ? "row-recall"
-        : "row-none"
-    );
 
     tbody.appendChild(tr);
   });
@@ -99,5 +99,5 @@ export function renderReportTable({
   return table;
 }
 
-/* 🔒 Backward compatibility */
+/* Backward compatibility */
 export default renderReportTable;
