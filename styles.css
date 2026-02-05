@@ -24,13 +24,6 @@ body {
   justify-content: space-between;
 }
 
-.app-header .left,
-.app-header .center,
-.app-header .right {
-  display: flex;
-  align-items: center;
-}
-
 .app-header img {
   height: 36px;
 }
@@ -53,12 +46,6 @@ body {
   padding: 10px 16px;
   display: flex;
   gap: 12px;
-}
-
-.filter-bar select,
-.filter-bar input {
-  padding: 6px 8px;
-  font-size: 14px;
 }
 
 /* =========================
@@ -89,12 +76,21 @@ body {
 }
 
 /* =========================
+   Summary Grid (NEW)
+========================= */
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* =========================
    Section Blocks
 ========================= */
 .section {
   background: #fff;
   padding: 12px;
-  margin-bottom: 16px;
   border: 1px solid #ddd;
 }
 
