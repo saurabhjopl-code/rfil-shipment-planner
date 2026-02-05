@@ -1,0 +1,139 @@
+* {
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f7f7f7;
+  color: #222;
+}
+
+/* =========================
+   Sticky Header
+========================= */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: #ffffff;
+  border-bottom: 1px solid #ddd;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-header .left,
+.app-header .center,
+.app-header .right {
+  display: flex;
+  align-items: center;
+}
+
+.app-header img {
+  height: 36px;
+}
+
+.app-header .title {
+  font-size: 20px;
+  font-weight: bold;
+  margin-left: 12px;
+}
+
+/* =========================
+   Filter Bar
+========================= */
+.filter-bar {
+  position: sticky;
+  top: 60px;
+  z-index: 900;
+  background: #ffffff;
+  border-bottom: 1px solid #ddd;
+  padding: 10px 16px;
+  display: flex;
+  gap: 12px;
+}
+
+.filter-bar select,
+.filter-bar input {
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
+/* =========================
+   Tabs
+========================= */
+.tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.tab {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+
+.tab.active {
+  font-weight: bold;
+  border-bottom: 3px solid #007bff;
+}
+
+/* =========================
+   Page Content
+========================= */
+.page {
+  padding: 16px;
+}
+
+/* =========================
+   Section Blocks
+========================= */
+.section {
+  background: #fff;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #ddd;
+}
+
+/* =========================
+   Report Table
+========================= */
+.table-container {
+  max-height: 500px;
+  overflow: auto;
+  border: 1px solid #ddd;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  background: #f0f0f0;
+  border-bottom: 1px solid #ccc;
+  padding: 8px;
+  font-size: 13px;
+}
+
+tbody td {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: #666;
+}
+
+.show-more {
+  margin-top: 12px;
+  text-align: center;
+}
