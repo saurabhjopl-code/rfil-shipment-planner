@@ -1,154 +1,123 @@
 /* =========================================================
-   sellerLogic.js – SELLER PLANNING ENGINE (DW-BASED)
-   Depends on:
-   - FINAL_DATA (output of calc.js)
-   - Raw Sale 30D (SELLER rows)
+   sellerLogic.js – SELLER FC REPLENISHMENT ENGINE (FINAL)
    ========================================================= */
 
-/* ===============================
-   CONFIG
-   =============================== */
+function buildSellerPlanning(finalData, sale30DRaw) {
 
-const SELLER_TARGET_DAYS = 45;
-
-const SELLER_BEST_FCS = {
-  "Amazon IN": ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
-  "Myntra": ["Bangalore", "Mumbai", "Bilaspur"],
-  "Flipkart": ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"]
-};
-
-/* ===============================
-   MAIN ENTRY
-   =============================== */
-
-/**
- * @param {Array} finalData - output of runCalculations()
- * @param {Array} sale30dRaw - raw Sale 30D rows (before calc)
- * @returns {Array} SELLER planning rows
- */
-function buildSellerPlanning(finalData, sale30dRaw) {
-
-  const sellerRows = [];
+  if (!Array.isArray(sale30DRaw) || sale30DRaw.length === 0) {
+    return [];
+  }
 
   /* ===============================
-     STEP S1: SELLER SALES
+     STEP 1: IDENTIFY SELLER SALES
+     SELLER is a fulfillment source,
+     NOT an MP
      =============================== */
 
-  const sellerSaleMap = {}; // uniwareSku|mp -> sale
-
-  sale30dRaw.forEach(r => {
-    if (r.WarehouseId !== "SELLER") return;
-    if (!SELLER_BEST_FCS[r.MP]) return;
-
-    const key = `${r.UniwareSKU}|${r.MP}`;
-    sellerSaleMap[key] = (sellerSaleMap[key] || 0) + (r.Quantity || 0);
+  const sellerSales = sale30DRaw.filter(r => {
+    const ft = String(r["Fulfillment Type"] || "").toUpperCase();
+    const wh = String(r["Warehouse Id"] || "").toUpperCase();
+    return ft === "SELLER" || wh === "SELLER";
   });
 
-  /* ===============================
-     STEP S2: FC SALE MAP (FROM FINAL_DATA)
-     =============================== */
-
-  const fcSaleMap = {}; // uniwareSku|mp -> sale
-
-  finalData.forEach(r => {
-    if (r.isClosedStyle) return;
-    if (!SELLER_BEST_FCS[r.mp]) return;
-
-    const key = `${r.uniwareSku}|${r.mp}`;
-    fcSaleMap[key] = (fcSaleMap[key] || 0) + (r.sale30dFc || 0);
-  });
+  if (!sellerSales.length) {
+    return [];
+  }
 
   /* ===============================
-     STEP S3: FC STRENGTH MAP
+     STEP 2: AGGREGATE SELLER SALES
      =============================== */
 
-  const fcStrength = {}; // mp|fc|sku -> strength
+  const map = {};
 
-  finalData.forEach(r => {
-    if (r.isClosedStyle) return;
-    if (!SELLER_BEST_FCS[r.mp]) return;
+  sellerSales.forEach(r => {
+    const styleId = r["Style ID"];
+    const sku = r["SKU"];
+    const uniwareSku = r["Uniware SKU"] || sku;
 
-    const k = `${r.mp}|${r.warehouseId}|${r.uniwareSku}`;
-    fcStrength[k] = Math.max(r.drr || 0, r.finalSkuDw || 0);
-  });
+    if (!styleId || !sku) return;
 
-  /* ===============================
-     STEP S4: BUILD SELLER ROWS
-     =============================== */
+    const key = `${styleId}|${sku}`;
 
-  Object.entries(sellerSaleMap).forEach(([key, sellerSale30d]) => {
+    if (!map[key]) {
+      map[key] = {
+        mp: "SELLER",
+        styleId,
+        sku,
+        uniwareSku,
+        warehouseId: "SELLER",
+        saleQty: 0,
 
-    const [uniwareSku, mp] = key.split("|");
-    const fcSale30d = fcSaleMap[key] || 0;
-
-    if (sellerSale30d <= 0) return;
-
-    const totalSale = sellerSale30d + fcSale30d;
-    const sellerDW = totalSale > 0 ? sellerSale30d / totalSale : 0;
-
-    const sellerDRR = sellerSale30d / 30;
-
-    const bestFCs = SELLER_BEST_FCS[mp] || [];
-    if (!bestFCs.length) return;
-
-    /* normalize FC strength */
-    let totalStrength = 0;
-    const fcWeights = {};
-
-    bestFCs.forEach(fc => {
-      const sKey = `${mp}|${fc}|${uniwareSku}`;
-      const strength = fcStrength[sKey] || 0;
-      fcWeights[fc] = strength;
-      totalStrength += strength;
-    });
-
-    /* fallback: equal split */
-    if (totalStrength === 0) {
-      bestFCs.forEach(fc => {
-        fcWeights[fc] = 1;
-      });
-      totalStrength = bestFCs.length;
+        // fields expected by UI
+        drr: 0,
+        fcStockQty: 0,
+        stockCover: 0,
+        shipmentQty: 0,
+        remark: ""
+      };
     }
 
-    /* ===============================
-       STEP S5: CREATE ROWS
-       =============================== */
-
-    bestFCs.forEach(fc => {
-
-      const fcDW = sellerDW * (fcWeights[fc] / totalStrength);
-
-      const fcRow = finalData.find(
-        r => r.mp === mp && r.warehouseId === fc && r.uniwareSku === uniwareSku
-      );
-
-      const fcStock = fcRow ? fcRow.fcStockQty : 0;
-
-      const stockCover =
-        sellerDRR > 0 ? fcStock / sellerDRR : 0;
-
-      const requiredShipmentQty =
-        sellerDRR > 0
-          ? Math.max(0, Math.ceil((SELLER_TARGET_DAYS - stockCover) * sellerDRR))
-          : 0;
-
-      sellerRows.push({
-        mp: "SELLER",
-        originMp: mp,
-        styleId: fcRow ? fcRow.styleId : "",
-        sku: fcRow ? fcRow.sku : "",
-        uniwareSku,
-        warehouseId: fc,
-        saleQty: sellerSale30d,
-        drr: sellerDRR,
-        fcStockQty: fcStock,
-        stockCover,
-        finalSkuDw: fcDW,
-        requiredShipmentQty,
-        shipmentQty: 0 // allocated later by main engine
-      });
-    });
+    map[key].saleQty += Number(r["Quantity"]) || 0;
   });
 
-  return sellerRows;
+  const rows = Object.values(map);
+
+  if (!rows.length) {
+    return [];
+  }
+
+  /* ===============================
+     STEP 3: DRR CALCULATION
+     =============================== */
+
+  rows.forEach(r => {
+    r.drr = r.saleQty / 30;
+  });
+
+  /* ===============================
+     STEP 4: UNIWARE STOCK MAP
+     (MASTER STOCK SOURCE)
+     =============================== */
+
+  const uniwareStockMap = {};
+
+  finalData.forEach(r => {
+    if (!r.uniwareSku) return;
+    if (uniwareStockMap[r.uniwareSku] == null) {
+      uniwareStockMap[r.uniwareSku] = r.uniwareStockQty || 0;
+    }
+  });
+
+  /* ===============================
+     STEP 5: 40% CAP + 45D TARGET
+     =============================== */
+
+  rows.forEach(r => {
+
+    const uwStock = uniwareStockMap[r.uniwareSku] || 0;
+    const maxAllocatable = Math.floor(uwStock * 0.4);
+
+    if (r.drr <= 0) {
+      r.shipmentQty = 0;
+      r.stockCover = 0;
+      r.remark = "No recent seller sales";
+      return;
+    }
+
+    if (maxAllocatable <= 0) {
+      r.shipmentQty = 0;
+      r.stockCover = 0;
+      r.remark = "No allocatable Uniware stock (40% cap)";
+      return;
+    }
+
+    const targetQty = Math.ceil(r.drr * 45);
+
+    r.shipmentQty = Math.min(targetQty, maxAllocatable);
+    r.stockCover = r.shipmentQty / r.drr;
+
+    r.remark = "Seller sale replenishment planned (45D target, 40% cap)";
+  });
+
+  return rows;
 }
