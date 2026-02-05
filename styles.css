@@ -1,3 +1,6 @@
+/* =========================
+   GLOBAL RESET
+========================= */
 * {
   box-sizing: border-box;
   font-family: Arial, Helvetica, sans-serif;
@@ -10,7 +13,7 @@ body {
 }
 
 /* =========================
-   Sticky Header
+   APP HEADER
 ========================= */
 .app-header {
   position: sticky;
@@ -35,7 +38,7 @@ body {
 }
 
 /* =========================
-   Filter Bar
+   FILTER BAR
 ========================= */
 .filter-bar {
   position: sticky;
@@ -49,7 +52,7 @@ body {
 }
 
 /* =========================
-   Tabs
+   TABS
 ========================= */
 .tabs {
   display: flex;
@@ -69,14 +72,14 @@ body {
 }
 
 /* =========================
-   Page Content
+   PAGE
 ========================= */
 .page {
   padding: 16px;
 }
 
 /* =========================
-   Summary Grid (NEW)
+   SUMMARY GRID
 ========================= */
 .summary-grid {
   display: grid;
@@ -86,7 +89,7 @@ body {
 }
 
 /* =========================
-   Section Blocks
+   SECTION
 ========================= */
 .section {
   background: #fff;
@@ -94,18 +97,17 @@ body {
   border: 1px solid #ddd;
 }
 
-/* =========================
-   Report Table
-========================= */
-.table-container {
-  max-height: 500px;
-  overflow: auto;
-  border: 1px solid #ddd;
+.section h3 {
+  text-align: center;
 }
 
+/* =========================
+   TABLES – CENTER ALIGN FIX
+========================= */
 table {
   width: 100%;
   border-collapse: collapse;
+  text-align: center; /* ✅ KEY FIX */
 }
 
 thead th {
@@ -115,12 +117,31 @@ thead th {
   border-bottom: 1px solid #ccc;
   padding: 8px;
   font-size: 13px;
+  text-align: center;
 }
 
 tbody td {
   padding: 8px;
   border-bottom: 1px solid #eee;
   font-size: 13px;
+  text-align: center;
+}
+
+/* =========================
+   GRAND TOTAL ROW
+========================= */
+.grand-total {
+  font-weight: bold;
+  border-top: 2px solid #000;
+}
+
+/* =========================
+   REPORT TABLE
+========================= */
+.table-container {
+  max-height: 500px;
+  overflow: auto;
+  border: 1px solid #ddd;
 }
 
 .empty-state {
@@ -135,7 +156,7 @@ tbody td {
 }
 
 /* =========================
-   Action Badges
+   ACTION BADGES
 ========================= */
 .badge {
   padding: 4px 8px;
