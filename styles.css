@@ -133,3 +133,28 @@ tbody td {
   margin-top: 12px;
   text-align: center;
 }
+
+/* =========================
+   Action Badges
+========================= */
+.badge {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.badge.ship {
+  background: #d4edda;
+  color: #155724;
+}
+
+.badge.recall {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.badge.none {
+  background: #fff3cd;
+  color: #856404;
+}
