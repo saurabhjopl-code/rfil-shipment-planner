@@ -15,7 +15,7 @@ import {
 } from "../shared/demandWeight.js";
 
 /**
- * MP PLANNER — STEP 4 (STABLE)
+ * MP PLANNER — STEP 4 (STABLE, FIXED)
  *
  * - actualShipmentQty = true demand
  * - shipmentQty      = DW + 40% Uniware capped
@@ -40,19 +40,33 @@ export function planMP({
   );
 
   /* -----------------------------
-     Uniware stock by SKU (40%)
+     🔑 SKU → Uniware SKU mapping
   ----------------------------- */
-  const uniwareBySku = new Map();
+  const skuToUniwareSku = new Map();
+  mpSales.forEach(r => {
+    if (r.sku && r.uniwareSku) {
+      skuToUniwareSku.set(r.sku, r.uniwareSku);
+    }
+  });
+
+  /* -----------------------------
+     Uniware stock by UNIWARE SKU
+  ----------------------------- */
+  const uniwareByUniSku = new Map();
   (uniwareStock || []).forEach(r => {
-    uniwareBySku.set(
-      r.sku,
-      (uniwareBySku.get(r.sku) || 0) + r.qty
+    uniwareByUniSku.set(
+      r.uniwareSku,
+      (uniwareByUniSku.get(r.uniwareSku) || 0) + r.qty
     );
   });
 
+  /* -----------------------------
+     Allocatable 40% per SKU
+  ----------------------------- */
   const allocatableBySku = new Map();
-  uniwareBySku.forEach((qty, sku) => {
-    allocatableBySku.set(sku, Math.floor(qty * 0.4));
+  skuToUniwareSku.forEach((uniSku, sku) => {
+    const totalUniware = uniwareByUniSku.get(uniSku) || 0;
+    allocatableBySku.set(sku, Math.floor(totalUniware * 0.4));
   });
 
   /* -----------------------------
