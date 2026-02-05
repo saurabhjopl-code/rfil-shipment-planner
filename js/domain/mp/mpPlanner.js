@@ -1,7 +1,6 @@
 import {
   TARGET_STOCK_DAYS,
-  RECALL_THRESHOLD_DAYS,
-  UNIWARE_ALLOCATION_PERCENT
+  RECALL_THRESHOLD_DAYS
 } from "../shared/constants.js";
 
 import {
@@ -9,32 +8,34 @@ import {
   calculateStockCover
 } from "../shared/metrics.js";
 
-import { calculateFCPriority } from "./fcPriority.js";
-
 /**
- * MP PLANNING CORE
+ * MP PLANNING CORE (PURE)
  *
- * Produces FC-level planning rows:
- * SHIP / RECALL / NONE
+ * RULES:
+ * - NO Uniware allocation
+ * - NO FC priority
+ * - NO stock limitation
+ * - Computes IDEAL shipment / recall only
  */
 
 export function planMP({
   mp,
   mpSales,
   fcStock,
-  uniwareStock,
   companyRemarks
 }) {
-  // -----------------------------
-  // Build lookup helpers
-  // -----------------------------
-
+  /* -----------------------------
+     Closed styles
+  ----------------------------- */
   const closedStyles = new Set(
     companyRemarks
       .filter(r => r.remark === "Closed")
       .map(r => r.style)
   );
 
+  /* -----------------------------
+     FC Stock lookup
+  ----------------------------- */
   const fcStockMap = new Map();
   fcStock
     .filter(r => r.mp === mp)
@@ -43,21 +44,9 @@ export function planMP({
       fcStockMap.set(key, r.qty);
     });
 
-  const uniwareMap = new Map();
-  uniwareStock.forEach(r => {
-    uniwareMap.set(r.uniwareSku, r.qty);
-  });
-
-  const totalUniwareQty = Array.from(uniwareMap.values())
-    .reduce((a, b) => a + b, 0);
-
-  let availableUniware =
-    totalUniwareQty * UNIWARE_ALLOCATION_PERCENT;
-
-  // -----------------------------
-  // Aggregate sales FC-wise
-  // -----------------------------
-
+  /* -----------------------------
+     Aggregate sales FC-wise
+  ----------------------------- */
   const saleMap = new Map();
 
   mpSales
@@ -71,7 +60,6 @@ export function planMP({
           sku: r.sku,
           fc: r.warehouseId,
           channelId: r.channelId,
-          uniwareSku: r.uniwareSku,
           saleQty: 0
         });
       }
@@ -79,10 +67,9 @@ export function planMP({
       saleMap.get(key).saleQty += r.qty;
     });
 
-  // -----------------------------
-  // Build planning rows
-  // -----------------------------
-
+  /* -----------------------------
+     Build planning rows
+  ----------------------------- */
   const planningRows = [];
 
   saleMap.forEach(row => {
@@ -99,6 +86,7 @@ export function planMP({
     let action = "NONE";
     let remarks = "";
 
+    /* Closed style rule */
     if (closedStyles.has(row.style)) {
       recallQty = fcStockQty;
       action = recallQty > 0 ? "RECALL" : "NONE";
@@ -126,7 +114,7 @@ export function planMP({
       saleQty: row.saleQty,
       drr: Number(drr.toFixed(2)),
       fcStock: fcStockQty,
-      stockCover: Number(stockCover.toFixed(1)),
+      stockCover: Number(stockCover.toFixed(2)),
       shipmentQty: Math.floor(shipmentQty),
       recallQty: Math.floor(recallQty),
       action,
@@ -134,43 +122,8 @@ export function planMP({
     });
   });
 
-  // -----------------------------
-  // Allocate Uniware for SHIP rows
-  // (priority applied here)
-  // -----------------------------
-
-  const shipRows = planningRows.filter(r => r.action === "SHIP");
-
-  const maxDRR = Math.max(...shipRows.map(r => r.drr), 0);
-  const maxDW = shipRows.length; // placeholder for DW (added later)
-
-  shipRows.forEach(r => {
-    const priority = calculateFCPriority({
-      fcDRR: r.drr,
-      maxDRR,
-      fcDW: 1,
-      maxDW
-    });
-
-    const allocatable = Math.min(
-      r.shipmentQty,
-      availableUniware
-    );
-
-    r.shipmentQty = Math.floor(allocatable);
-    availableUniware -= r.shipmentQty;
-
-    if (r.shipmentQty === 0) {
-      r.action = "NONE";
-    }
-
-    r.remarks = "FC Priority Allocation";
-  });
-
   return {
     mp,
-    rows: planningRows,
-    uniwareUsed: totalUniwareQty * UNIWARE_ALLOCATION_PERCENT - availableUniware,
-    remainingUniware: availableUniware
+    rows: planningRows
   };
 }
