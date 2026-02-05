@@ -11,15 +11,32 @@ export function renderPageShell(type) {
 
       <div class="section">
         <h3>Seller Shipment Report</h3>
-        ${renderEmptyTable()}
+        ${renderEmptyTable(false)}
       </div>
     `;
   } else {
     page.innerHTML = `
-      <div class="section"><h3>FC Wise Stock</h3><div class="empty-state">No data</div></div>
-      <div class="section"><h3>FC Wise Sale | DRR | Stock Cover</h3><div class="empty-state">No data</div></div>
-      <div class="section"><h3>MP Wise Top 10 SKUs</h3><div class="empty-state">No data</div></div>
-      <div class="section"><h3>MP Wise Top 10 Styles</h3><div class="empty-state">No data</div></div>
+      <div class="summary-grid">
+        <div class="section">
+          <h3>FC Wise Stock</h3>
+          <div class="empty-state">No data</div>
+        </div>
+
+        <div class="section">
+          <h3>FC Wise Sale | DRR | Stock Cover</h3>
+          <div class="empty-state">No data</div>
+        </div>
+
+        <div class="section">
+          <h3>MP Wise Top 10 SKUs</h3>
+          <div class="empty-state">No data</div>
+        </div>
+
+        <div class="section">
+          <h3>MP Wise Top 10 Styles</h3>
+          <div class="empty-state">No data</div>
+        </div>
+      </div>
 
       <div class="section">
         <h3>Shipment & Recall Summary</h3>
@@ -28,7 +45,7 @@ export function renderPageShell(type) {
 
       <div class="section">
         <h3>FC Planning Report</h3>
-        ${renderEmptyTable()}
+        ${renderEmptyTable(true)}
       </div>
     `;
   }
@@ -36,7 +53,7 @@ export function renderPageShell(type) {
   return page;
 }
 
-function renderEmptyTable() {
+function renderEmptyTable(includeRecall) {
   return `
     <div class="table-container">
       <table>
@@ -50,18 +67,20 @@ function renderEmptyTable() {
             <th>FC Stock</th>
             <th>Stock Cover</th>
             <th>Shipment Qty</th>
-            <th>Recall Qty</th>
-            <th>Action</th>
+            ${includeRecall ? "<th>Recall Qty</th><th>Action</th>" : ""}
             <th>Remarks</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td colspan="11" class="empty-state">No rows to display</td>
+            <td colspan="${includeRecall ? 11 : 9}" class="empty-state">
+              No rows to display
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
+
     <div class="show-more">
       <button disabled>Show More</button>
     </div>
