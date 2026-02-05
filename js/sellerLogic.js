@@ -1,32 +1,49 @@
 /* =========================================================
    sellerLogic.js – SELLER FC REPLENISHMENT ENGINE (FINAL)
+   Business-driven, MP-safe, FC-safe
    ========================================================= */
 
 function buildSellerPlanning(finalData, sale30DRaw) {
 
-  if (!Array.isArray(sale30DRaw) || sale30DRaw.length === 0) {
+  /* -------------------------------
+     Guard
+  -------------------------------- */
+  if (!Array.isArray(finalData) || !Array.isArray(sale30DRaw)) {
     return [];
   }
 
-  /* ===============================
-     STEP 1: IDENTIFY SELLER SALES
-     SELLER is a fulfillment source,
-     NOT an MP
-     =============================== */
+  /* =======================================================
+     STEP 0: BUILD FC SET (FROM MP DATA)
+     Any warehouse NOT in this set is SELLER
+     ======================================================= */
+
+  const fcSet = new Set(
+    finalData
+      .map(r => r.warehouseId)
+      .filter(v => typeof v === "string" && v.trim() !== "")
+  );
+
+  if (fcSet.size === 0) {
+    return [];
+  }
+
+  /* =======================================================
+     STEP 1: IDENTIFY SELLER SALES (DATA-DRIVEN)
+     ======================================================= */
 
   const sellerSales = sale30DRaw.filter(r => {
-    const ft = String(r["Fulfillment Type"] || "").toUpperCase();
-    const wh = String(r["Warehouse Id"] || "").toUpperCase();
-    return ft === "SELLER" || wh === "SELLER";
+    const wh = String(r["Warehouse Id"] || "").trim();
+    if (!wh) return false;
+    return !fcSet.has(wh);
   });
 
   if (!sellerSales.length) {
     return [];
   }
 
-  /* ===============================
+  /* =======================================================
      STEP 2: AGGREGATE SELLER SALES
-     =============================== */
+     ======================================================= */
 
   const map = {};
 
@@ -46,9 +63,8 @@ function buildSellerPlanning(finalData, sale30DRaw) {
         sku,
         uniwareSku,
         warehouseId: "SELLER",
-        saleQty: 0,
 
-        // fields expected by UI
+        saleQty: 0,
         drr: 0,
         fcStockQty: 0,
         stockCover: 0,
@@ -61,26 +77,21 @@ function buildSellerPlanning(finalData, sale30DRaw) {
   });
 
   const rows = Object.values(map);
+  if (!rows.length) return [];
 
-  if (!rows.length) {
-    return [];
-  }
-
-  /* ===============================
-     STEP 3: DRR CALCULATION
-     =============================== */
+  /* =======================================================
+     STEP 3: DRR
+     ======================================================= */
 
   rows.forEach(r => {
     r.drr = r.saleQty / 30;
   });
 
-  /* ===============================
-     STEP 4: UNIWARE STOCK MAP
-     (MASTER STOCK SOURCE)
-     =============================== */
+  /* =======================================================
+     STEP 4: UNIWARE STOCK MAP (MASTER)
+     ======================================================= */
 
   const uniwareStockMap = {};
-
   finalData.forEach(r => {
     if (!r.uniwareSku) return;
     if (uniwareStockMap[r.uniwareSku] == null) {
@@ -88,9 +99,9 @@ function buildSellerPlanning(finalData, sale30DRaw) {
     }
   });
 
-  /* ===============================
-     STEP 5: 40% CAP + 45D TARGET
-     =============================== */
+  /* =======================================================
+     STEP 5: 40% CAP + 45 DAY TARGET
+     ======================================================= */
 
   rows.forEach(r => {
 
@@ -115,8 +126,7 @@ function buildSellerPlanning(finalData, sale30DRaw) {
 
     r.shipmentQty = Math.min(targetQty, maxAllocatable);
     r.stockCover = r.shipmentQty / r.drr;
-
-    r.remark = "Seller sale replenishment planned (45D target, 40% cap)";
+    r.remark = "Seller sale → FC replenishment planning (45D target)";
   });
 
   return rows;
