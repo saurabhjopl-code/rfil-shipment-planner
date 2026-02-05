@@ -1,6 +1,6 @@
 /* =========================================================
-   app.js – V1.2.6 (FULL REPLACE – SAFE)
-   MP tabs LOCKED, SELLER isolated
+   app.js – V1.2.8 (FULL REPLACE)
+   MP logic LOCKED, SELLER isolated, FC Summary fixed
    ========================================================= */
 
 let FINAL_DATA = [];
@@ -36,8 +36,10 @@ document.addEventListener("DOMContentLoaded", async ()=>{
 
     renderSummary();
     buildMPTabs();
+
   }catch(e){
-    document.querySelector(".container").innerHTML=`<pre>${e.stack||e.message}</pre>`;
+    document.querySelector(".container").innerHTML =
+      `<pre>${e.stack || e.message}</pre>`;
   }
 });
 
@@ -73,7 +75,7 @@ function buildMPTabs(){
 
       renderTable(mp);
 
-      if(FC_SUMMARY_VISIBLE && mp!=="SELLER"){
+      if (FC_SUMMARY_VISIBLE && mp !== "SELLER") {
         renderMPSummary(mp);
       }
     };
@@ -87,20 +89,17 @@ function buildMPTabs(){
   });
 }
 
-/* ================= FC SUMMARY (UNCHANGED) ================= */
+/* ================= FC SUMMARY ================= */
 
-window.toggleFCSummary=function(){
+window.toggleFCSummary = function(){
+  FC_SUMMARY_VISIBLE = !FC_SUMMARY_VISIBLE;
   const card=document.getElementById("fc-summary-card");
-  FC_SUMMARY_VISIBLE=!FC_SUMMARY_VISIBLE;
-  card.style.display=FC_SUMMARY_VISIBLE?"block":"none";
-  if(FC_SUMMARY_VISIBLE && CURRENT_MP!=="SELLER"){
+  card.style.display = FC_SUMMARY_VISIBLE ? "block" : "none";
+
+  if (FC_SUMMARY_VISIBLE && CURRENT_MP !== "SELLER") {
     renderMPSummary(CURRENT_MP);
   }
 };
-
-function renderMPSummary(mp){
-  /* unchanged – your last working version */
-}
 
 /* ================= TABLE ROUTER ================= */
 
@@ -112,7 +111,7 @@ function renderTable(mp){
   }
 }
 
-/* ================= MP TABLE (LOCKED) ================= */
+/* ================= MP TABLE (UNCHANGED) ================= */
 
 function renderMPTable(mp){
   let rows=FINAL_DATA.filter(r=>r.mp===mp)
@@ -124,8 +123,6 @@ function renderMPTable(mp){
     if(FILTERS.action!=="ALL" && r.actionType!==FILTERS.action) return false;
     return true;
   });
-
-  const fcs=[...new Set(rows.map(r=>r.warehouseId))];
 
   let html=`
   <table>
@@ -161,11 +158,11 @@ function renderMPTable(mp){
   document.getElementById("table-container").innerHTML=html;
 }
 
-/* ================= SELLER TABLE (ISOLATED) ================= */
+/* ================= SELLER TABLE ================= */
 
 function renderSellerTable(){
   if(!SELLER_DATA.length){
-    document.getElementById("table-container").innerHTML=
+    document.getElementById("table-container").innerHTML =
       "<div style='padding:16px'>No SELLER data available</div>";
     return;
   }
@@ -184,15 +181,15 @@ function renderSellerTable(){
   SELLER_DATA.slice(0,PAGE_SIZE).forEach(r=>{
     html+=`
       <tr>
-        <td>${r.styleId||""}</td>
+        <td>${r.styleId}</td>
         <td>${r.sku}</td>
         <td>${r.warehouseId}</td>
-        <td>${r.saleQty||0}</td>
+        <td>${r.saleQty}</td>
         <td>${fmt(r.drr)}</td>
-        <td>${r.fcStockQty||0}</td>
+        <td>${r.fcStockQty}</td>
         <td>${fmt(r.stockCover,1)}</td>
-        <td>${r.shipmentQty||0}</td>
-        <td>${r.remark||"Seller → FC replenishment"}</td>
+        <td>${r.shipmentQty}</td>
+        <td>${r.remark}</td>
       </tr>`;
   });
 
