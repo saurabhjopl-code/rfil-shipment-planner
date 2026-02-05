@@ -15,10 +15,10 @@ import {
 } from "../shared/demandWeight.js";
 
 /**
- * MP PLANNER — STEP 4
+ * MP PLANNER — STEP 4 (STABLE)
  *
  * - actualShipmentQty = true demand
- * - shipmentQty      = DW-allocated (40% Uniware cap)
+ * - shipmentQty      = DW + 40% Uniware capped
  * - Recall logic unchanged
  * - Action logic unchanged
  */
@@ -28,7 +28,7 @@ export function planMP({
   mpSales,
   fcStock,
   companyRemarks,
-  uniwareStock = []   // OPTIONAL (safe default)
+  uniwareStock
 }) {
   /* -----------------------------
      Closed styles
@@ -43,7 +43,7 @@ export function planMP({
      Uniware stock by SKU (40%)
   ----------------------------- */
   const uniwareBySku = new Map();
-  uniwareStock.forEach(r => {
+  (uniwareStock || []).forEach(r => {
     uniwareBySku.set(
       r.sku,
       (uniwareBySku.get(r.sku) || 0) + r.qty
@@ -93,7 +93,6 @@ export function planMP({
      Aggregate FC–SKU–STYLE sales
   ----------------------------- */
   const fcSkuStyleMap = new Map();
-
   mpSales
     .filter(r => r.mp === mp)
     .forEach(r => {
@@ -110,16 +109,17 @@ export function planMP({
     });
 
   /* -----------------------------
-     MP-level allocation envelope
+     MP allocation envelope per SKU
   ----------------------------- */
   const mpAllocBySku = new Map();
-
   mpSkuSaleMap.forEach((mpSale, sku) => {
     const totalSale = totalSkuSaleMap.get(sku) || 0;
     const pool = allocatableBySku.get(sku) || 0;
     if (totalSale > 0 && pool > 0) {
-      const mpDW = mpSale / totalSale;
-      mpAllocBySku.set(sku, Math.floor(pool * mpDW));
+      mpAllocBySku.set(
+        sku,
+        Math.floor((mpSale / totalSale) * pool)
+      );
     }
   });
 
@@ -152,9 +152,7 @@ export function planMP({
           TARGET_STOCK_DAYS * drr - fcStockQty
         );
 
-        /* MP allocation cap (SKU-level) */
         const mpCap = mpAllocBySku.get(row.sku) || 0;
-
         shipmentQty = Math.min(
           Math.floor(actualShipmentQty),
           mpCap
@@ -174,9 +172,9 @@ export function planMP({
       }
     }
 
-    /* DW metadata */
     const totalSkuSale = totalSkuSaleMap.get(row.sku) || 0;
     const mpSkuSale = mpSkuSaleMap.get(row.sku) || 0;
+
     const mpDW = calculateMPDW(mpSkuSale, totalSkuSale);
     const fcDW = calculateFCDW(row.saleQty, mpSkuSale);
     const finalDW = calculateFinalDW(mpDW, fcDW);
@@ -194,4 +192,14 @@ export function planMP({
       recallQty: Math.floor(recallQty),
       action,
       remarks,
-      mpDW: Number
+      mpDW: Number(mpDW.toFixed(4)),
+      fcDW: Number(fcDW.toFixed(4)),
+      finalDW: Number(finalDW.toFixed(4))
+    });
+  });
+
+  return {
+    mp,
+    rows
+  };
+}
