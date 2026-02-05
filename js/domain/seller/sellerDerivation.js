@@ -1,50 +1,53 @@
 /**
- * SELLER DERIVATION LOGIC
+ * SELLER DERIVATION
  *
- * Purpose:
- * - Split Sale 30D into:
- *   1. MP sales (valid FC warehouse)
- *   2. SELLER sales (non-FC warehouse)
- *
- * AUTHORITATIVE RULE:
- * Warehouse Id ∉ FC Stock Warehouse Id set → SELLER
- *
- * NO business logic
- * NO shipment logic
- * NO mutation
+ * Pure classification logic.
+ * No shipment logic.
+ * No Uniware logic.
+ * No MP logic changes.
  */
 
+/**
+ * Derive MP sales vs SELLER sales
+ *
+ * @param {Object} input
+ * @param {Array} input.sale30D  - normalized sale data
+ * @param {Array} input.fcStock  - normalized FC stock data
+ *
+ * @returns {Object}
+ * {
+ *   mpSales:     Sale rows fulfilled by FCs
+ *   sellerSales: Sale rows fulfilled by Seller
+ * }
+ */
 export function deriveSellerSales({ sale30D, fcStock }) {
-  if (!Array.isArray(sale30D)) {
-    throw new Error("deriveSellerSales: sale30D must be an array");
-  }
-  if (!Array.isArray(fcStock)) {
-    throw new Error("deriveSellerSales: fcStock must be an array");
-  }
+  /* -----------------------------
+     Build FC list by MP
+  ----------------------------- */
+  const fcByMP = new Map();
 
-  // Build authoritative FC warehouse set
-  const fcWarehouseSet = new Set(
-    fcStock
-      .map(r => r.warehouseId)
-      .filter(Boolean)
-  );
+  fcStock.forEach(r => {
+    if (!fcByMP.has(r.mp)) {
+      fcByMP.set(r.mp, new Set());
+    }
+    fcByMP.get(r.mp).add(r.warehouseId);
+  });
 
+  /* -----------------------------
+     Split sales
+  ----------------------------- */
   const mpSales = [];
   const sellerSales = [];
 
-  for (const row of sale30D) {
-    if (!row || !row.warehouseId) {
-      // Defensive: treat malformed rows as SELLER
-      sellerSales.push(row);
-      continue;
-    }
+  sale30D.forEach(r => {
+    const fcSet = fcByMP.get(r.mp);
 
-    if (fcWarehouseSet.has(row.warehouseId)) {
-      mpSales.push(row);
+    if (fcSet && fcSet.has(r.warehouseId)) {
+      mpSales.push(r);
     } else {
-      sellerSales.push(row);
+      sellerSales.push(r);
     }
-  }
+  });
 
   return {
     mpSales,
