@@ -1,26 +1,10 @@
 /**
- * SELLER DERIVATION
+ * SELLER DERIVATION — VA3.3
  *
  * Pure classification logic.
- * Enforces data contract for SELLER rows.
- * No shipment logic.
- * No Uniware math.
- * No MP logic changes.
+ * Enforces MP normalization.
  */
 
-/**
- * Derive MP sales vs SELLER sales
- *
- * @param {Object} input
- * @param {Array} input.sale30D  - normalized sale data
- * @param {Array} input.fcStock  - normalized FC stock data
- *
- * @returns {Object}
- * {
- *   mpSales:      Sale rows fulfilled by FCs
- *   sellerSales: Sale rows fulfilled by Seller (uniwareSku enforced)
- * }
- */
 export function deriveSellerSales({ sale30D, fcStock }) {
   /* -----------------------------
      Build FC list by MP
@@ -28,10 +12,11 @@ export function deriveSellerSales({ sale30D, fcStock }) {
   const fcByMP = new Map();
 
   fcStock.forEach(r => {
-    if (!fcByMP.has(r.mp)) {
-      fcByMP.set(r.mp, new Set());
+    const mp = r.mp.trim().toUpperCase();
+    if (!fcByMP.has(mp)) {
+      fcByMP.set(mp, new Set());
     }
-    fcByMP.get(r.mp).add(r.warehouseId);
+    fcByMP.get(mp).add(r.warehouseId);
   });
 
   /* -----------------------------
@@ -41,16 +26,18 @@ export function deriveSellerSales({ sale30D, fcStock }) {
   const sellerSales = [];
 
   sale30D.forEach(r => {
-    const fcSet = fcByMP.get(r.mp);
+    const mp = r.mp.trim().toUpperCase();
+    const fcSet = fcByMP.get(mp);
+
+    const normalizedRow = {
+      ...r,
+      mp
+    };
 
     if (fcSet && fcSet.has(r.warehouseId)) {
-      mpSales.push(r);
+      mpSales.push(normalizedRow);
     } else {
-      /* 🔑 ENFORCE SELLER DATA CONTRACT */
-      sellerSales.push({
-        ...r,
-        uniwareSku: r.uniwareSku ?? null
-      });
+      sellerSales.push(normalizedRow);
     }
   });
 
