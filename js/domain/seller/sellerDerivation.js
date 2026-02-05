@@ -2,8 +2,9 @@
  * SELLER DERIVATION
  *
  * Pure classification logic.
+ * Enforces data contract for SELLER rows.
  * No shipment logic.
- * No Uniware logic.
+ * No Uniware math.
  * No MP logic changes.
  */
 
@@ -16,8 +17,8 @@
  *
  * @returns {Object}
  * {
- *   mpSales:     Sale rows fulfilled by FCs
- *   sellerSales: Sale rows fulfilled by Seller
+ *   mpSales:      Sale rows fulfilled by FCs
+ *   sellerSales: Sale rows fulfilled by Seller (uniwareSku enforced)
  * }
  */
 export function deriveSellerSales({ sale30D, fcStock }) {
@@ -45,7 +46,11 @@ export function deriveSellerSales({ sale30D, fcStock }) {
     if (fcSet && fcSet.has(r.warehouseId)) {
       mpSales.push(r);
     } else {
-      sellerSales.push(r);
+      /* 🔑 ENFORCE SELLER DATA CONTRACT */
+      sellerSales.push({
+        ...r,
+        uniwareSku: r.uniwareSku ?? null
+      });
     }
   });
 
