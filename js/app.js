@@ -230,8 +230,10 @@ function renderTab(tab, mpViews, sellerView) {
 
     sections[1].replaceWith(
       renderReportTable({
-        rows: sellerView.report.rows,
-        includeRecall: false
+  rows: sellerView.report.rows,
+  mode: "SELLER"
+})
+
       })
     );
 
@@ -303,3 +305,4 @@ function renderTab(tab, mpViews, sellerView) {
 
   content.appendChild(page);
 }
+
