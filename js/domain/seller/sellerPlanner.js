@@ -1,12 +1,13 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — STEP 2 (FIXED, NON-DESTRUCTIVE)
+ * SELLER SHIPMENT PLANNER — VA3.0 FIXED
  *
- * ✔ SKU-wise Uniware 40% allocation
- * ✔ DW-based MP split
- * ✔ Seller allocation only
- * ✔ MP untouched
+ * ✔ Uniware consolidated by Uniware SKU
+ * ✔ Fallback SKU → Uniware SKU mapping added
+ * ✔ Actual Shipment Qty preserved
+ * ✔ Shipment Qty now works
+ * ✔ No MP impact
  */
 
 export function planSellerShipments({
@@ -26,10 +27,11 @@ export function planSellerShipments({
   );
 
   /* -----------------------------
-     Uniware stock by Uniware SKU
+     Uniware stock by Uniware SKU (CONSOLIDATED)
   ----------------------------- */
   const uniwareByUniSku = new Map();
   uniwareStock.forEach(r => {
+    if (!r.uniwareSku) return;
     uniwareByUniSku.set(
       r.uniwareSku,
       (uniwareByUniSku.get(r.uniwareSku) || 0) + r.qty
@@ -37,7 +39,17 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     Seller demand by SKU + Uniware SKU
+     SKU → Uniware SKU fallback map (from MP data)
+  ----------------------------- */
+  const skuToUniwareSku = new Map();
+  mpPlanningRows.forEach(r => {
+    if (r.sku && r.uniwareSku) {
+      skuToUniwareSku.set(r.sku, r.uniwareSku);
+    }
+  });
+
+  /* -----------------------------
+     Seller demand by SKU
   ----------------------------- */
   const sellerDemand = new Map();
 
@@ -48,24 +60,28 @@ export function planSellerShipments({
     const actualShipmentQty = Math.floor(45 * drr);
     if (actualShipmentQty <= 0) return;
 
-    const key = `${r.sku}|${r.uniwareSku}`;
-    if (!sellerDemand.has(key)) {
-      sellerDemand.set(key, {
+    const uniwareSku =
+      r.uniwareSku || skuToUniwareSku.get(r.sku);
+
+    if (!uniwareSku) return; // cannot allocate without mapping
+
+    if (!sellerDemand.has(r.sku)) {
+      sellerDemand.set(r.sku, {
         sku: r.sku,
-        uniwareSku: r.uniwareSku,
         style: r.style,
+        uniwareSku,
         saleQty: 0,
         actualShipmentQty: 0
       });
     }
 
-    const row = sellerDemand.get(key);
+    const row = sellerDemand.get(r.sku);
     row.saleQty += r.qty;
     row.actualShipmentQty += actualShipmentQty;
   });
 
   /* -----------------------------
-     MP + Seller sale totals (for DW)
+     MP + Seller total sale by SKU (for DW)
   ----------------------------- */
   const totalSaleBySku = new Map();
 
@@ -91,6 +107,7 @@ export function planSellerShipments({
   sellerDemand.forEach(demand => {
     const uniwareQty =
       uniwareByUniSku.get(demand.uniwareSku) || 0;
+
     if (uniwareQty <= 0) return;
 
     const allocatable = Math.floor(uniwareQty * 0.4);
@@ -101,15 +118,15 @@ export function planSellerShipments({
 
     const sellerDW = demand.saleQty / totalSale;
 
-    const sellerAllocation = Math.min(
+    const shipmentQty = Math.min(
       Math.floor(allocatable * sellerDW),
       demand.actualShipmentQty
     );
 
-    if (sellerAllocation <= 0) return;
+    if (shipmentQty <= 0) return;
 
     /* -----------------------------
-       FC selection via DW
+       FC selection (DW → fallback)
     ----------------------------- */
     let candidates = [];
 
@@ -139,10 +156,10 @@ export function planSellerShipments({
       fcStock: 0,
       stockCover: 0,
       actualShipmentQty: demand.actualShipmentQty,
-      shipmentQty: sellerAllocation,
+      shipmentQty,
       remarks:
-        sellerAllocation < demand.actualShipmentQty
-          ? "DW-based partial allocation"
+        shipmentQty < demand.actualShipmentQty
+          ? "DW / Uniware 40% constraint"
           : "DW allocation"
     });
   });
