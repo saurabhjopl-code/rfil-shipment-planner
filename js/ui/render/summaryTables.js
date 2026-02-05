@@ -51,6 +51,10 @@ export function renderSummaryTable({
   return section;
 }
 
+/* =========================
+   HELPERS
+========================= */
+
 function formatValue(val) {
   if (typeof val === "number") {
     return Number(val.toFixed(2));
@@ -59,12 +63,30 @@ function formatValue(val) {
 }
 
 function formatGrandTotal(column, rows) {
-  const numeric = rows.every(r => typeof r[column] === "number");
-
-  if (!numeric) {
+  /* Non-numeric columns */
+  if (!rows.every(r => typeof r[column] === "number")) {
     return "Grand Total";
   }
 
+  /* 🔒 SPECIAL CASE: Stock Cover */
+  if (column === "Stock Cover") {
+    const totalSale = rows.reduce(
+      (sum, r) => sum + (Number(r["Total Sale"]) || 0),
+      0
+    );
+
+    const totalStock = rows.reduce(
+      (sum, r) => sum + (Number(r["Total Stock"]) || 0),
+      0
+    );
+
+    const drr = totalSale / 30;
+    const sc = drr > 0 ? totalStock / drr : 0;
+
+    return Number(sc.toFixed(2));
+  }
+
+  /* Default additive behavior */
   const sum = rows.reduce(
     (total, r) => total + (Number(r[column]) || 0),
     0
