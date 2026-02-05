@@ -1,14 +1,11 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — VA3.2 (SIMPLIFIED & SAFE)
+ * SELLER SHIPMENT PLANNER — VA3.3
  *
- * Rules:
- * - Uniware stock already consolidated
- * - Only remaining 40% pool is distributed
- * - Distribution purely via DW
+ * - Actual Shipment Qty = pure demand
+ * - Shipment Qty = DW-based allocation from remaining 40%
  * - No FC stock / SC / recall
- * - MP logic untouched
  */
 
 export function planSellerShipments({
@@ -40,7 +37,7 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     MP shipment already consumed (per SKU)
+     MP shipment already consumed
   ----------------------------- */
   const mpShipmentBySku = new Map();
   mpPlanningRows.forEach(r => {
@@ -82,7 +79,7 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     Total seller sale per SKU (for DW)
+     Total seller sale per SKU (DW base)
   ----------------------------- */
   const totalSellerSaleBySku = new Map();
   sellerDemand.forEach(r => {
@@ -117,22 +114,16 @@ export function planSellerShipments({
 
     let shipmentQty = remainingPool * sellerDW;
 
-    /* Round up small fractional allocations */
-    if (shipmentQty > 0 && shipmentQty < 1) {
-      shipmentQty = 1;
-    } else {
-      shipmentQty = Math.floor(shipmentQty);
-    }
-
-    shipmentQty = Math.min(
-      shipmentQty,
-      demand.actualShipmentQty
-    );
+    // round-up small fractions
+    shipmentQty =
+      shipmentQty > 0 && shipmentQty < 1
+        ? 1
+        : Math.floor(shipmentQty);
 
     if (shipmentQty <= 0) return;
 
     /* -----------------------------
-       FC selection (MP specific)
+       FC selection (MP-specific)
     ----------------------------- */
     let candidates = [];
 
@@ -167,8 +158,8 @@ export function planSellerShipments({
       action: "SHIP",
       remarks:
         shipmentQty < demand.actualShipmentQty
-          ? "DW-based distribution (remaining pool)"
-          : "DW-based distribution"
+          ? "Allocated from remaining 40% via DW"
+          : "Fully allocated via DW"
     });
   });
 
