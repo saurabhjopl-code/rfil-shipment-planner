@@ -15,11 +15,12 @@ import {
 } from "../shared/demandWeight.js";
 
 /**
- * MP PLANNING CORE — VA.1 (FIXED)
+ * MP PLANNING CORE — VA.1 (STABLE)
  *
- * - Style propagation restored
- * - DW preserved
- * - NO allocation logic
+ * ✔ Style preserved
+ * ✔ DW preserved
+ * ✔ NO allocation
+ * ✔ FC Stock keyed by FC + SKU ONLY
  */
 
 export function planMP({
@@ -38,7 +39,7 @@ export function planMP({
   );
 
   /* -----------------------------
-     Aggregate SKU sales (GLOBAL)
+     Aggregate total SKU sales
   ----------------------------- */
   const totalSkuSaleMap = new Map();
   mpSales.forEach(r => {
@@ -62,13 +63,13 @@ export function planMP({
     });
 
   /* -----------------------------
-     FC Stock lookup
+     FC Stock lookup (FC + SKU)
   ----------------------------- */
   const fcStockMap = new Map();
   fcStock
     .filter(r => r.mp === mp)
     .forEach(r => {
-      const key = `${r.warehouseId}|${r.sku}|${r.channelId}`;
+      const key = `${r.warehouseId}|${r.sku}`;
       fcStockMap.set(key, r.qty);
     });
 
@@ -86,7 +87,6 @@ export function planMP({
           fc: r.warehouseId,
           sku: r.sku,
           style: r.style,
-          channelId: r.channelId,
           saleQty: 0
         });
       }
@@ -107,9 +107,7 @@ export function planMP({
     const finalDW = calculateFinalDW(mpDW, fcDW);
 
     const fcStockQty =
-      fcStockMap.get(
-        `${row.fc}|${row.sku}|${row.channelId}`
-      ) || 0;
+      fcStockMap.get(`${row.fc}|${row.sku}`) || 0;
 
     const drr = calculateDRR(row.saleQty);
     const stockCover = calculateStockCover(fcStockQty, drr);
@@ -140,7 +138,7 @@ export function planMP({
     }
 
     planningRows.push({
-      style: row.style,              // ✅ FIXED
+      style: row.style,
       sku: row.sku,
       fc: row.fc,
       saleQty: row.saleQty,
