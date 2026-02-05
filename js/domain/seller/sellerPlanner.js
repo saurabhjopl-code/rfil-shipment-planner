@@ -1,12 +1,13 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — VA3.0 FINAL FIX
+ * SELLER SHIPMENT PLANNER — VA3.1 FIXED
  *
- * ✔ Uniware consolidated
- * ✔ DW-based allocation
- * ✔ Minimum 1-unit safeguard
- * ✔ MP untouched
+ * ✔ Planned per MP + SKU
+ * ✔ Uniware 40% respected
+ * ✔ Actual vs Shipment works
+ * ✔ No FC stock / SC
+ * ✔ No MP impact
  */
 
 export function planSellerShipments({
@@ -38,7 +39,7 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     Seller demand by SKU
+     Seller demand by MP + SKU
   ----------------------------- */
   const sellerDemand = new Map();
 
@@ -50,23 +51,26 @@ export function planSellerShipments({
     const actualShipmentQty = Math.floor(45 * drr);
     if (actualShipmentQty <= 0) return;
 
-    if (!sellerDemand.has(r.sku)) {
-      sellerDemand.set(r.sku, {
+    const key = `${r.mp}|${r.sku}`;
+
+    if (!sellerDemand.has(key)) {
+      sellerDemand.set(key, {
+        mp: r.mp,
         sku: r.sku,
-        uniwareSku: r.uniwareSku,
         style: r.style,
+        uniwareSku: r.uniwareSku,
         saleQty: 0,
         actualShipmentQty: 0
       });
     }
 
-    const row = sellerDemand.get(r.sku);
+    const row = sellerDemand.get(key);
     row.saleQty += r.qty;
     row.actualShipmentQty += actualShipmentQty;
   });
 
   /* -----------------------------
-     MP + Seller sale totals (for DW)
+     Total sale by SKU (MP + Seller)
   ----------------------------- */
   const totalSaleBySku = new Map();
 
@@ -92,7 +96,6 @@ export function planSellerShipments({
   sellerDemand.forEach(demand => {
     const uniwareQty =
       uniwareByUniSku.get(demand.uniwareSku) || 0;
-
     if (uniwareQty <= 0) return;
 
     const allocatable = Math.floor(uniwareQty * 0.4);
@@ -103,31 +106,19 @@ export function planSellerShipments({
 
     const sellerDW = demand.saleQty / totalSale;
 
-    let shipmentQty = Math.floor(allocatable * sellerDW);
-
-    /* 🔑 MINIMUM ALLOCATION SAFEGUARD (SELLER ONLY) */
-    if (
-      shipmentQty === 0 &&
-      allocatable > 0 &&
-      demand.actualShipmentQty > 0
-    ) {
-      shipmentQty = 1;
-    }
-
-    shipmentQty = Math.min(
-      shipmentQty,
-      demand.actualShipmentQty
-    );
-
+    let shipmentQty = Math.ceil(allocatable * sellerDW);
+    shipmentQty = Math.min(shipmentQty, demand.actualShipmentQty);
     if (shipmentQty <= 0) return;
 
     /* -----------------------------
-       FC selection (DW → fallback)
+       FC selection (MP-specific)
     ----------------------------- */
     let candidates = [];
 
     mpPlanningRows
-      .filter(r => r.sku === demand.sku)
+      .filter(
+        r => r.mp === demand.mp && r.sku === demand.sku
+      )
       .forEach(r => {
         candidates.push({
           fc: r.fc,
@@ -136,8 +127,8 @@ export function planSellerShipments({
       });
 
     if (candidates.length === 0) {
-      Object.values(fallbackFCsByMP).forEach(list =>
-        list.forEach(fc => candidates.push({ fc, dw: 0 }))
+      (fallbackFCsByMP[demand.mp] || []).forEach(fc =>
+        candidates.push({ fc, dw: 0 })
       );
     }
 
@@ -146,13 +137,13 @@ export function planSellerShipments({
     rows.push({
       style: demand.style,
       sku: demand.sku,
-      fc: candidates[0].fc,
+      mp: demand.mp,
+      fc: candidates[0]?.fc || "NA",
       saleQty: demand.saleQty,
       drr: Number((demand.saleQty / 30).toFixed(2)),
-      fcStock: 0,
-      stockCover: 0,
       actualShipmentQty: demand.actualShipmentQty,
       shipmentQty,
+      action: shipmentQty > 0 ? "SHIP" : "NONE",
       remarks:
         shipmentQty < demand.actualShipmentQty
           ? "DW / Uniware 40% constraint"
