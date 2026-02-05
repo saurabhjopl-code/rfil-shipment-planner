@@ -1,8 +1,11 @@
 /* =========================================================
-   app.js – V1.2.3 (FULL REPLACE – SELLER MP FIX)
+   app.js – V1.2.4 (FULL REPLACE)
+   SELLER rendered from separate dataset
    ========================================================= */
 
 let FINAL_DATA = [];
+let SELLER_DATA = [];
+
 let CURRENT_MP = "";
 let CURRENT_PAGE = 1;
 const PAGE_SIZE = 200;
@@ -17,11 +20,21 @@ let FC_SUMMARY_VISIBLE = false;
 function fmt(n,d=2){const x=Number(n);return isFinite(x)?x.toFixed(d):"-";}
 function sum(arr,k){return arr.reduce((s,r)=>s+(+r[k]||0),0);}
 
-/* init */
+/* ================= INIT ================= */
+
 document.addEventListener("DOMContentLoaded", async ()=>{
   try{
     const normalized = await ingestAllSheets();
+
+    // FC planning (unchanged)
     FINAL_DATA = runCalculations(normalized);
+
+    // 🔥 SELLER planning (separate, derived)
+    SELLER_DATA = buildSellerPlanning(
+      FINAL_DATA,
+      normalized.sale30dRaw || normalized.sale30d || []
+    );
+
     renderSummary();
     buildMPTabs();
   }catch(e){
@@ -46,17 +59,8 @@ function buildMPTabs(){
   const c=document.getElementById("mp-tabs");
   c.innerHTML="";
 
-  /* 🔒 SAFE MP DERIVATION (SELLER GUARANTEED) */
-  let mps = [...new Set(
-    FINAL_DATA
-      .map(r => r.mp)
-      .filter(mp => typeof mp === "string" && mp.trim() !== "")
-  )];
-
-  /* ensure SELLER is present if rows exist */
-  if (FINAL_DATA.some(r => r.mp === "SELLER") && !mps.includes("SELLER")) {
-    mps.push("SELLER");
-  }
+  const baseMPs = [...new Set(FINAL_DATA.map(r=>r.mp))];
+  const mps = [...baseMPs, "SELLER"]; // 🔒 force SELLER tab
 
   mps.forEach((mp,i)=>{
     const b=document.createElement("button");
@@ -71,7 +75,7 @@ function buildMPTabs(){
 
       renderTable(mp);
 
-      if(FC_SUMMARY_VISIBLE){
+      if(FC_SUMMARY_VISIBLE && mp!=="SELLER"){
         renderMPSummary(mp);
       }
     };
@@ -93,7 +97,7 @@ window.toggleFCSummary = function(){
   FC_SUMMARY_VISIBLE = !FC_SUMMARY_VISIBLE;
   card.style.display = FC_SUMMARY_VISIBLE ? "block" : "none";
 
-  if(FC_SUMMARY_VISIBLE){
+  if(FC_SUMMARY_VISIBLE && CURRENT_MP!=="SELLER"){
     renderMPSummary(CURRENT_MP);
   }
 };
@@ -156,17 +160,22 @@ function renderMPSummary(mp){
 function renderTable(mp){
   CURRENT_MP=mp;
 
-  let rows=FINAL_DATA.filter(r=>r.mp===mp)
-    .sort((a,b)=>(b.sale30dFc||0)-(a.sale30dFc||0));
+  const source =
+    mp==="SELLER" ? SELLER_DATA : FINAL_DATA.filter(r=>r.mp===mp);
+
+  let rows=[...source].sort(
+    (a,b)=>(b.sale30dFc||b.saleQty||0)-(a.sale30dFc||a.saleQty||0)
+  );
 
   rows=rows.filter(r=>{
     if(FILTERS.sku && !r.sku?.toLowerCase().includes(FILTERS.sku)) return false;
     if(FILTERS.fc!=="ALL" && r.warehouseId!==FILTERS.fc) return false;
-    if(FILTERS.action!=="ALL" && r.actionType!==FILTERS.action) return false;
+    if(mp!=="SELLER" && FILTERS.action!=="ALL" && r.actionType!==FILTERS.action)
+      return false;
     return true;
   });
 
-  const fcs=[...new Set(FINAL_DATA.filter(r=>r.mp===mp).map(r=>r.warehouseId))];
+  const fcs=[...new Set(source.map(r=>r.warehouseId))];
 
   let html=`
   <table>
@@ -174,7 +183,7 @@ function renderTable(mp){
       <tr>
         <th>Style</th><th>SKU</th><th>FC</th><th>Sale Qty</th>
         <th>DRR</th><th>FC Stock</th><th>Stock Cover</th>
-        <th>Shipment Qty</th><th>Recall Qty</th><th>Action</th><th>Remarks</th>
+        <th>Shipment Qty</th>${mp==="SELLER"?"":"<th>Recall Qty</th><th>Action</th>"}<th>Remarks</th>
       </tr>
       <tr class="filter-row">
         <th></th>
@@ -191,14 +200,15 @@ function renderTable(mp){
             ${fcs.map(fc=>`<option ${FILTERS.fc===fc?"selected":""}>${fc}</option>`).join("")}
           </select>
         </th>
-        <th colspan="6"></th>
+        <th colspan="${mp==="SELLER"?4:6}"></th>
+        ${mp==="SELLER"?"":`
         <th>
           <select class="filter-select"
             onchange="FILTERS.action=this.value;CURRENT_PAGE=1;renderTable(CURRENT_MP)">
             ${["ALL","SHIP","RECALL","NONE","CLOSED_RECALL"]
               .map(a=>`<option ${FILTERS.action===a?"selected":""}>${a}</option>`).join("")}
           </select>
-        </th>
+        </th>`}
         <th></th>
       </tr>
     </thead><tbody>
@@ -208,11 +218,15 @@ function renderTable(mp){
     const cls=r.actionType==="SHIP"?"tag tag-ship":r.actionType==="RECALL"?"tag tag-recall":"tag tag-closed";
     html+=`
       <tr>
-        <td>${r.styleId}</td><td>${r.sku}</td><td>${r.warehouseId}</td>
-        <td>${r.sale30dFc||0}</td><td>${fmt(r.drr)}</td>
-        <td>${r.fcStockQty||0}</td><td>${fmt(r.stockCover,1)}</td>
-        <td>${r.shipmentQty||0}</td><td>${r.recallQty||0}</td>
-        <td><span class="${cls}">${r.actionType}</span></td>
+        <td>${r.styleId||""}</td>
+        <td>${r.sku||""}</td>
+        <td>${r.warehouseId}</td>
+        <td>${r.sale30dFc||r.saleQty||0}</td>
+        <td>${fmt(r.drr)}</td>
+        <td>${r.fcStockQty||0}</td>
+        <td>${fmt(r.stockCover,1)}</td>
+        <td>${r.shipmentQty||0}</td>
+        ${mp==="SELLER"?"":`<td>${r.recallQty||0}</td><td><span class="${cls}">${r.actionType}</span></td>`}
         <td>${r.remark||""}</td>
       </tr>`;
   });
