@@ -105,10 +105,10 @@ async function init() {
 
       remainingUniwareGlobal = mpResult.remainingUniware;
 
-      /* 6️⃣ SUMMARIES (✔ FIXED FC STOCK SOURCE) */
+      /* 6️⃣ SUMMARIES (✔ ALL SOURCES CORRECT) */
       const summaries = {
-        fcStock: fcStockSummary(fcStock, mp), // ✅ CORRECT
-        fcSale: fcSaleSummary(mpResult.rows),
+        fcStock: fcStockSummary(fcStock, mp),
+        fcSale: fcSaleSummary(mpResult.rows, fcStock, mp),
         topSkus: mpTopSkuSummary(mpResult.rows),
         topStyles: mpTopStyleSummary(mpResult.rows),
         shipment: shipmentSummary(mpResult.rows)
@@ -120,7 +120,13 @@ async function init() {
         summaries,
         reportRows: mpResult.rows,
         filters: {
-          fcList: [...new Set(fcStock.filter(r => r.mp === mp).map(r => r.warehouseId))]
+          fcList: [
+            ...new Set(
+              fcStock
+                .filter(r => r.mp === mp)
+                .map(r => r.warehouseId)
+            )
+          ]
         }
       });
     });
