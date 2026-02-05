@@ -2,20 +2,20 @@
  * FC Wise Sale | DRR | Stock Cover Summary
  *
  * RULES:
- * - Sale comes from mpPlanningRows
- * - Stock comes from fcStock (authoritative)
- * - SC = Total FC Stock / DRR
+ * - Sale → from mpPlanningRows
+ * - Stock → from fcStock (authoritative)
+ * - DRR = Total Sale / 30
+ * - Stock Cover = Total Stock / DRR
  *
- * Input:
- *  - mpPlanningRows[]
- *  - fcStock[]
- *  - mp (string)
+ * IMPORTANT:
+ * - "Total Stock" MUST be present in rows
+ *   even if UI does not show it
  */
 
 export function fcSaleSummary(mpPlanningRows, fcStock, mp) {
   const saleMap = new Map();
 
-  /* Aggregate sale per FC from planning rows */
+  /* Aggregate sale per FC */
   mpPlanningRows.forEach(r => {
     const fc = r.fc;
     if (!saleMap.has(fc)) {
@@ -24,7 +24,7 @@ export function fcSaleSummary(mpPlanningRows, fcStock, mp) {
     saleMap.set(fc, saleMap.get(fc) + (Number(r.saleQty) || 0));
   });
 
-  /* Aggregate stock per FC from fcStock */
+  /* Aggregate stock per FC */
   const stockMap = new Map();
   fcStock
     .filter(r => r.mp === mp)
@@ -36,15 +36,16 @@ export function fcSaleSummary(mpPlanningRows, fcStock, mp) {
       stockMap.set(fc, stockMap.get(fc) + (Number(r.qty) || 0));
     });
 
-  /* Build final summary */
+  /* Build summary rows */
   return Array.from(saleMap.entries()).map(([fc, totalSale]) => {
-    const drr = totalSale / 30;
     const totalStock = stockMap.get(fc) || 0;
+    const drr = totalSale / 30;
     const sc = drr > 0 ? totalStock / drr : 0;
 
     return {
       FC: fc,
       "Total Sale": totalSale,
+      "Total Stock": totalStock,     // 🔒 REQUIRED
       DRR: Number(drr.toFixed(2)),
       "Stock Cover": Number(sc.toFixed(2))
     };
