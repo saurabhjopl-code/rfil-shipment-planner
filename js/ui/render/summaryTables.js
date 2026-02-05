@@ -1,12 +1,14 @@
 /**
  * Renders a generic summary table
- * @param {Object} config
- * @param {string} config.title
- * @param {Array<string>} config.columns
- * @param {Array<Object>} config.rows
- * @param {boolean} config.showGrandTotal
+ * UI ONLY – no business logic
  */
-export function renderSummaryTable({ title, columns, rows, showGrandTotal = false }) {
+
+export function renderSummaryTable({
+  title,
+  columns,
+  rows,
+  showGrandTotal = false
+}) {
   const section = document.createElement("div");
   section.className = "section";
 
@@ -24,15 +26,15 @@ export function renderSummaryTable({ title, columns, rows, showGrandTotal = fals
           ? `<tr><td colspan="${columns.length}" class="empty-state">No data</td></tr>`
           : rows.map(row => `
               <tr>
-                ${columns.map(col => `<td>${row[col] ?? "-"}</td>`).join("")}
+                ${columns.map(col => `<td>${formatValue(row[col])}</td>`).join("")}
               </tr>
             `).join("")
       }
       ${
         showGrandTotal && rows.length > 0
           ? `
-            <tr style="font-weight:bold;border-top:2px solid #ccc">
-              ${columns.map(col => `<td>${getGrandTotal(col, rows)}</td>`).join("")}
+            <tr class="grand-total">
+              ${columns.map(col => `<td>${formatGrandTotal(col, rows)}</td>`).join("")}
             </tr>
           `
           : ""
@@ -49,9 +51,24 @@ export function renderSummaryTable({ title, columns, rows, showGrandTotal = fals
   return section;
 }
 
-function getGrandTotal(column, rows) {
-  const numeric = rows.every(r => typeof r[column] === "number");
-  if (!numeric) return "Grand Total";
+function formatValue(val) {
+  if (typeof val === "number") {
+    return Number(val.toFixed(2));
+  }
+  return val ?? "-";
+}
 
-  return rows.reduce((sum, r) => sum + (r[column] || 0), 0);
+function formatGrandTotal(column, rows) {
+  const numeric = rows.every(r => typeof r[column] === "number");
+
+  if (!numeric) {
+    return "Grand Total";
+  }
+
+  const sum = rows.reduce(
+    (total, r) => total + (Number(r[column]) || 0),
+    0
+  );
+
+  return Number(sum.toFixed(2));
 }
