@@ -249,20 +249,22 @@ function renderTab(tab, mpViews, sellerView) {
   );
 
   sections[4].replaceWith(
-    renderSummaryTable({
-      title: "Shipment & Recall Summary",
-      columns: [
-        "FC",
-        "Total Stock",
-        "Total Sale",
-        "DRR",
-        "Shipment Qty",
-        "Recall Qty"
-      ],
-      rows: view.summaries.shipment,
-      showGrandTotal: true
-    })
-  );
+  renderSummaryTable({
+    title: "Shipment & Recall Summary",
+    columns: [
+      "FC",
+      "Total Stock",
+      "Total Sale",
+      "DRR",
+      "Actual Shipment Qty",
+      "Shipment Qty",
+      "Recall Qty"
+    ],
+    rows: view.summaries.shipment,
+    showGrandTotal: true
+  })
+);
+
 
   sections[5].replaceWith(
     renderReportTable({
@@ -273,3 +275,4 @@ function renderTab(tab, mpViews, sellerView) {
 
   content.appendChild(page);
 }
+
