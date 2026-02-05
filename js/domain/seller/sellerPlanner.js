@@ -1,13 +1,14 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — VA3.1 FIXED
+ * SELLER SHIPMENT PLANNER — VA3.2 (SIMPLIFIED & SAFE)
  *
- * ✔ Planned per MP + SKU
- * ✔ Uniware 40% respected
- * ✔ Actual vs Shipment works
- * ✔ No FC stock / SC
- * ✔ No MP impact
+ * Rules:
+ * - Uniware stock already consolidated
+ * - Only remaining 40% pool is distributed
+ * - Distribution purely via DW
+ * - No FC stock / SC / recall
+ * - MP logic untouched
  */
 
 export function planSellerShipments({
@@ -35,6 +36,17 @@ export function planSellerShipments({
     uniwareByUniSku.set(
       r.uniwareSku,
       (uniwareByUniSku.get(r.uniwareSku) || 0) + r.qty
+    );
+  });
+
+  /* -----------------------------
+     MP shipment already consumed (per SKU)
+  ----------------------------- */
+  const mpShipmentBySku = new Map();
+  mpPlanningRows.forEach(r => {
+    mpShipmentBySku.set(
+      r.sku,
+      (mpShipmentBySku.get(r.sku) || 0) + r.shipmentQty
     );
   });
 
@@ -70,21 +82,13 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     Total sale by SKU (MP + Seller)
+     Total seller sale per SKU (for DW)
   ----------------------------- */
-  const totalSaleBySku = new Map();
-
-  mpPlanningRows.forEach(r => {
-    totalSaleBySku.set(
+  const totalSellerSaleBySku = new Map();
+  sellerDemand.forEach(r => {
+    totalSellerSaleBySku.set(
       r.sku,
-      (totalSaleBySku.get(r.sku) || 0) + r.saleQty
-    );
-  });
-
-  sellerSales.forEach(r => {
-    totalSaleBySku.set(
-      r.sku,
-      (totalSaleBySku.get(r.sku) || 0) + r.qty
+      (totalSellerSaleBySku.get(r.sku) || 0) + r.saleQty
     );
   });
 
@@ -98,20 +102,37 @@ export function planSellerShipments({
       uniwareByUniSku.get(demand.uniwareSku) || 0;
     if (uniwareQty <= 0) return;
 
-    const allocatable = Math.floor(uniwareQty * 0.4);
-    if (allocatable <= 0) return;
+    const totalAllocatable = Math.floor(uniwareQty * 0.4);
+    if (totalAllocatable <= 0) return;
 
-    const totalSale = totalSaleBySku.get(demand.sku) || 0;
-    if (totalSale <= 0) return;
+    const mpUsed = mpShipmentBySku.get(demand.sku) || 0;
+    const remainingPool = Math.max(0, totalAllocatable - mpUsed);
+    if (remainingPool <= 0) return;
 
-    const sellerDW = demand.saleQty / totalSale;
+    const totalSellerSale =
+      totalSellerSaleBySku.get(demand.sku) || 0;
+    if (totalSellerSale <= 0) return;
 
-    let shipmentQty = Math.ceil(allocatable * sellerDW);
-    shipmentQty = Math.min(shipmentQty, demand.actualShipmentQty);
+    const sellerDW = demand.saleQty / totalSellerSale;
+
+    let shipmentQty = remainingPool * sellerDW;
+
+    /* Round up small fractional allocations */
+    if (shipmentQty > 0 && shipmentQty < 1) {
+      shipmentQty = 1;
+    } else {
+      shipmentQty = Math.floor(shipmentQty);
+    }
+
+    shipmentQty = Math.min(
+      shipmentQty,
+      demand.actualShipmentQty
+    );
+
     if (shipmentQty <= 0) return;
 
     /* -----------------------------
-       FC selection (MP-specific)
+       FC selection (MP specific)
     ----------------------------- */
     let candidates = [];
 
@@ -143,11 +164,11 @@ export function planSellerShipments({
       drr: Number((demand.saleQty / 30).toFixed(2)),
       actualShipmentQty: demand.actualShipmentQty,
       shipmentQty,
-      action: shipmentQty > 0 ? "SHIP" : "NONE",
+      action: "SHIP",
       remarks:
         shipmentQty < demand.actualShipmentQty
-          ? "DW / Uniware 40% constraint"
-          : "DW allocation"
+          ? "DW-based distribution (remaining pool)"
+          : "DW-based distribution"
     });
   });
 
