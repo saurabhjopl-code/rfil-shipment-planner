@@ -1,6 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.1 — CONSOLIDATED + ENRICHED
+ * VA4.2 — SHIPMENT CEILING FIXED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -13,15 +13,11 @@ import {
   normalizeCompanyRemarks
 } from "./ingest/normalize.js";
 
-/* DERIVATION */
+/* DOMAIN */
+import { planMP } from "./domain/mp/mpPlanner.js";
 import { deriveSellerSales } from "./domain/seller/sellerDerivation.js";
-
-/* VA4 ENGINE */
-import { buildDemandUniverse } from "./domain/va4/buildDemandUniverse.js";
-import { consolidateDemandRows } from "./domain/va4/consolidateDemandRows.js";
-import { applyAllocation } from "./domain/va4/applyAllocation.js";
-import { distributeToFC } from "./domain/va4/distributeToFC.js";
-import { enrichMpRows } from "./domain/va4/enrichMpRows.js";
+import { planSellerShipments } from "./domain/seller/sellerPlanner.js";
+import { enforceShipmentCeiling } from "./domain/mp/enforceShipmentCeiling.js";
 
 /* SUMMARIES */
 import { fcStockSummary } from "./summaries/fcStockSummary.js";
@@ -43,15 +39,19 @@ import { renderPageShell } from "./ui/layout/pageShell.js";
 import { renderSummaryTable } from "./ui/render/summaryTables.js";
 import { renderReportTable } from "./ui/render/reportTable.js";
 
-/* ============================= */
+/* =============================
+   BOOTSTRAP
+============================= */
 
 const app = document.getElementById("app");
 app.innerHTML = "";
+
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
 const tabsContainer = document.createElement("div");
 const content = document.createElement("div");
+
 app.appendChild(tabsContainer);
 app.appendChild(content);
 
@@ -67,59 +67,83 @@ async function init() {
         loadCSV(SOURCES.companyRemarks)
       ]);
 
-    const sale30D = normalizeSale30D(parseCSV(saleCSV));
-    const fcStock = normalizeFCStock(parseCSV(fcCSV));
-    const uniwareStock = normalizeUniwareStock(parseCSV(uniCSV));
-    const companyRemarks = normalizeCompanyRemarks(parseCSV(remarksCSV));
+    const saleRows = parseCSV(saleCSV);
+    const fcRows = parseCSV(fcCSV);
+    const uniRows = parseCSV(uniCSV);
+    const remarksRows = parseCSV(remarksCSV);
+
+    const sale30D = normalizeSale30D(saleRows);
+    const fcStock = normalizeFCStock(fcRows);
+    const uniwareStock = normalizeUniwareStock(uniRows);
+    const companyRemarks = normalizeCompanyRemarks(remarksRows);
 
     const { mpSales, sellerSales } = deriveSellerSales({
       sale30D,
       fcStock
     });
 
-    /* VA4 PIPELINE */
-    const demand = buildDemandUniverse({ mpSales, sellerSales });
-    const consolidated = consolidateDemandRows(demand);
-    const allocated = applyAllocation({ demandRows: consolidated, uniwareStock });
-    const distributed = distributeToFC({
-      allocatedRows: allocated,
-      fallbackFCsByMP: {
-        AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
-        FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
-        MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"],
-        SELLER: []
-      }
-    });
-
-    const finalRows = enrichMpRows({
-      rows: distributed,
-      fcStock,
-      companyRemarks
-    });
-
-    /* BUILD VIEWS */
+    const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
-    ["AMAZON", "FLIPKART", "MYNTRA"].forEach(mp => {
-      const rows = finalRows.filter(r => r.mp === mp);
+    const allMpPlanningRows = [];
+
+    MPs.forEach(mp => {
+      const mpResult = planMP({
+        mp,
+        mpSales,
+        fcStock,
+        companyRemarks,
+        uniwareStock
+      });
+
+      /* 🔑 APPLY CEILING HERE (REAL FIX) */
+      const fixedRows = enforceShipmentCeiling(mpResult.rows);
+
+      allMpPlanningRows.push(...fixedRows);
+
       mpViews[mp] = buildMpView({
         mp,
         summaries: {
           fcStock: fcStockSummary(fcStock, mp),
-          fcSale: fcSaleSummary(rows, fcStock, mp),
-          topSkus: mpTopSkuSummary(rows),
-          topStyles: mpTopStyleSummary(rows),
-          shipment: shipmentSummary(rows)
+          fcSale: fcSaleSummary(fixedRows, fcStock, mp),
+          topSkus: mpTopSkuSummary(fixedRows),
+          topStyles: mpTopStyleSummary(fixedRows),
+          shipment: shipmentSummary(fixedRows)
         },
-        reportRows: rows,
-        filters: { fcList: [...new Set(rows.map(r => r.fc))] }
+        reportRows: fixedRows,
+        filters: {
+          fcList: [
+            ...new Set(
+              fcStock
+                .filter(r => r.mp === mp)
+                .map(r => r.warehouseId)
+            )
+          ]
+        }
       });
     });
 
-    const sellerRows = finalRows.filter(r => r.mp === "SELLER");
+    const sellerResult = planSellerShipments({
+      sellerSales,
+      uniwareStock,
+      companyRemarks,
+      mpPlanningRows: allMpPlanningRows,
+      fallbackFCsByMP: {
+        AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
+        FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
+        MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"]
+      }
+    });
+
     const sellerView = buildSellerView({
-      summaries: { shipment: sellerSummary({ sellerRows }) },
-      reportRows: sellerRows,
-      filters: { fcList: [...new Set(sellerRows.map(r => r.fc))] }
+      summaries: {
+        shipment: sellerSummary({
+          sellerRows: sellerResult.rows
+        })
+      },
+      reportRows: sellerResult.rows,
+      filters: {
+        fcList: [...new Set(sellerResult.rows.map(r => r.fc))]
+      }
     });
 
     tabsContainer.appendChild(
@@ -135,7 +159,9 @@ async function init() {
   }
 }
 
-/* ============================= */
+/* =============================
+   TAB RENDERING
+============================= */
 
 function renderTab(tab, mpViews, sellerView) {
   content.innerHTML = "";
@@ -168,46 +194,56 @@ function renderTab(tab, mpViews, sellerView) {
   const page = renderPageShell(tab);
   const sections = page.querySelectorAll(".section");
 
-  sections[0].replaceWith(renderSummaryTable({
-    title: "FC Wise Stock",
-    columns: ["FC", "Total Stock"],
-    rows: view.summaries.fcStock,
-    showGrandTotal: true
-  }));
+  sections[0].replaceWith(
+    renderSummaryTable({
+      title: "FC Wise Stock",
+      columns: ["FC", "Total Stock"],
+      rows: view.summaries.fcStock,
+      showGrandTotal: true
+    })
+  );
 
-  sections[1].replaceWith(renderSummaryTable({
-    title: "FC Wise Sale | DRR | Stock Cover",
-    columns: ["FC", "Total Sale", "DRR", "Stock Cover"],
-    rows: view.summaries.fcSale,
-    showGrandTotal: true
-  }));
+  sections[1].replaceWith(
+    renderSummaryTable({
+      title: "FC Wise Sale | DRR | Stock Cover",
+      columns: ["FC", "Total Sale", "DRR", "Stock Cover"],
+      rows: view.summaries.fcSale,
+      showGrandTotal: true
+    })
+  );
 
-  sections[2].replaceWith(renderSummaryTable({
-    title: "MP Wise Top 10 SKUs",
-    columns: ["SKU", "Total Sale", "DRR"],
-    rows: view.summaries.topSkus
-  }));
+  sections[2].replaceWith(
+    renderSummaryTable({
+      title: "MP Wise Top 10 SKUs",
+      columns: ["SKU", "Total Sale", "DRR"],
+      rows: view.summaries.topSkus
+    })
+  );
 
-  sections[3].replaceWith(renderSummaryTable({
-    title: "MP Wise Top 10 Styles",
-    columns: ["Style", "Total Sale", "DRR"],
-    rows: view.summaries.topStyles
-  }));
+  sections[3].replaceWith(
+    renderSummaryTable({
+      title: "MP Wise Top 10 Styles",
+      columns: ["Style", "Total Sale", "DRR"],
+      rows: view.summaries.topStyles
+    })
+  );
 
-  sections[4].replaceWith(renderSummaryTable({
-    title: "Shipment & Recall Summary",
-    columns: [
-      "FC",
-      "Total Stock",
-      "Total Sale",
-      "DRR",
-      "Actual Shipment Qty",
-      "Shipment Qty",
-      "Recall Qty"
-    ],
-    rows: view.summaries.shipment,
-    showGrandTotal: true
-  }));
+  sections[4].replaceWith(
+    renderSummaryTable({
+      title: "Shipment & Recall Summary",
+      columns: [
+        "FC",
+        "Total Stock",
+        "Total Sale",
+        "DRR",
+        "Actual Shipment Qty",
+        "Shipment Qty",
+        "Recall Qty"
+      ],
+      rows: view.summaries.shipment,
+      showGrandTotal: true
+    })
+  );
 
   sections[5].replaceWith(
     renderReportTable({
