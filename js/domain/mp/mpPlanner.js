@@ -15,12 +15,12 @@ import {
 } from "../shared/demandWeight.js";
 
 /**
- * MP PLANNER — STEP 4 (STABLE, FIXED)
+ * MP PLANNER — VA4.2 (LOCKED & SAFE)
  *
- * - actualShipmentQty = true demand
- * - shipmentQty      = DW + 40% Uniware capped
- * - Recall logic unchanged
- * - Action logic unchanged
+ * ✔ Actual Shipment Qty ALWAYS computed
+ * ✔ Shipment Qty NEVER exceeds Actual Shipment Qty
+ * ✔ DW + Uniware logic preserved
+ * ✔ Recall logic untouched
  */
 
 export function planMP({
@@ -40,7 +40,7 @@ export function planMP({
   );
 
   /* -----------------------------
-     🔑 SKU → Uniware SKU mapping
+     SKU → Uniware SKU mapping
   ----------------------------- */
   const skuToUniwareSku = new Map();
   mpSales.forEach(r => {
@@ -50,7 +50,7 @@ export function planMP({
   });
 
   /* -----------------------------
-     Uniware stock by UNIWARE SKU
+     Uniware stock by Uniware SKU
   ----------------------------- */
   const uniwareByUniSku = new Map();
   (uniwareStock || []).forEach(r => {
@@ -160,23 +160,27 @@ export function planMP({
       action = recallQty > 0 ? "RECALL" : "NONE";
       remarks = "Style Closed";
     } else {
-      if (stockCover < TARGET_STOCK_DAYS) {
-        actualShipmentQty = Math.max(
-          0,
-          TARGET_STOCK_DAYS * drr - fcStockQty
-        );
+      /* -----------------------------
+         ACTUAL DEMAND (45D TARGET)
+      ----------------------------- */
+      actualShipmentQty = Math.max(
+        0,
+        TARGET_STOCK_DAYS * drr - fcStockQty
+      );
 
+      if (stockCover < TARGET_STOCK_DAYS) {
         const mpCap = mpAllocBySku.get(row.sku) || 0;
+
         shipmentQty = Math.min(
           Math.floor(actualShipmentQty),
           mpCap
         );
 
         if (shipmentQty < actualShipmentQty) {
-          remarks = "DW / Uniware 40% constraint";
+          remarks = "40% Uniware / DW constrained";
         }
 
-        action = actualShipmentQty > 0 ? "SHIP" : "NONE";
+        action = shipmentQty > 0 ? "SHIP" : "NONE";
       } else if (stockCover > RECALL_THRESHOLD_DAYS) {
         recallQty = Math.max(
           0,
