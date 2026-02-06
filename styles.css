@@ -13,9 +13,12 @@ body {
 }
 
 /* =========================
-   APP HEADER
+   APP HEADER (STICKY)
 ========================= */
 .app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
   background: #ffffff;
   border-bottom: 1px solid #d1d5db;
   padding: 10px 24px;
@@ -25,7 +28,7 @@ body {
 }
 
 .app-header img {
-  height: 38px;
+  height: 36px;
 }
 
 .app-header .title {
@@ -35,37 +38,37 @@ body {
 
 /* =========================
    STICKY CONTROL BAR
-   (Filters + Tabs)
+   (Filters + Tabs together)
 ========================= */
-.filters-bar {
+.sticky-controls {
   position: sticky;
-  top: 60px; /* below header */
+  top: 56px; /* header height */
   z-index: 90;
-  background: #ffffff;
-  padding: 12px 24px;
-  display: flex;
-  gap: 16px;
-  align-items: flex-end;
-  border-bottom: 1px solid #d1d5db;
-}
-
-/* Tabs row */
-.tabs {
-  position: sticky;
-  top: 112px; /* header + filters */
-  z-index: 89;
-  display: flex;
-  gap: 24px;
-  padding: 10px 24px;
   background: #ffffff;
   border-bottom: 2px solid #d1d5db;
 }
 
+/* Filters */
+.filters-bar {
+  padding: 10px 24px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 24px;
+  padding: 10px 24px 6px;
+  border-top: 1px solid #e5e7eb;
+}
+
 .tab {
-  padding-bottom: 6px;
   font-size: 14px;
   color: #6b7280;
   cursor: pointer;
+  padding-bottom: 6px;
 }
 
 .tab.active {
@@ -75,10 +78,16 @@ body {
 }
 
 /* =========================
-   PAGE GRID (STRICT)
+   PAGE CONTENT
 ========================= */
 .page {
   padding: 20px 24px;
+}
+
+/* =========================
+   SUMMARY LAYOUT
+========================= */
+.page {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
@@ -101,7 +110,7 @@ body {
   grid-column: span 2;
 }
 
-/* Report table */
+/* Report */
 .section:nth-child(6) {
   grid-column: span 2;
 }
@@ -116,7 +125,7 @@ body {
 }
 
 .section h3 {
-  margin: 0 0 10px 0;
+  margin: 0 0 10px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -130,6 +139,14 @@ table {
   font-size: 13px;
 }
 
+/* Sticky report headers ONLY */
+.section:nth-child(6) thead th {
+  position: sticky;
+  top: 118px; /* header + controls */
+  z-index: 5;
+}
+
+/* Headers */
 thead th {
   background: #f3f4f6;
   border-bottom: 2px solid #d1d5db;
@@ -138,6 +155,7 @@ thead th {
   font-weight: 600;
 }
 
+/* Body */
 tbody td {
   padding: 7px 8px;
   border-bottom: 1px solid #e5e7eb;
@@ -152,6 +170,7 @@ tbody tr:hover {
   background: #eef2ff;
 }
 
+/* Footer */
 tfoot td {
   background: #e5e7eb;
   font-weight: 700;
@@ -204,8 +223,7 @@ tfoot td {
     grid-column: span 1 !important;
   }
 
-  .filters-bar,
-  .tabs {
+  .sticky-controls {
     position: static;
   }
 }
