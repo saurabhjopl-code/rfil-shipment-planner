@@ -46,14 +46,11 @@ import { renderReportTable } from "./ui/render/reportTable.js";
 const app = document.getElementById("app");
 app.innerHTML = "";
 
+/* HEADER + FILTERS */
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
-const tabsContainer = document.createElement("div");
-const content = document.createElement("div");
-
-app.appendChild(tabsContainer);
-app.appendChild(content);
+let currentPage = null;
 
 init();
 
@@ -95,9 +92,7 @@ async function init() {
         uniwareStock
       });
 
-      /* 🔑 APPLY CEILING HERE (REAL FIX) */
       const fixedRows = enforceShipmentCeiling(mpResult.rows);
-
       allMpPlanningRows.push(...fixedRows);
 
       mpViews[mp] = buildMpView({
@@ -146,7 +141,8 @@ async function init() {
       }
     });
 
-    tabsContainer.appendChild(
+    /* TABS — DIRECT CHILD OF APP (FIX) */
+    app.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
 
@@ -154,7 +150,7 @@ async function init() {
 
   } catch (e) {
     console.error(e);
-    content.innerHTML =
+    app.innerHTML +=
       `<div style="padding:16px;color:red">Failed to load app. Check console.</div>`;
   }
 }
@@ -164,7 +160,7 @@ async function init() {
 ============================= */
 
 function renderTab(tab, mpViews, sellerView) {
-  content.innerHTML = "";
+  if (currentPage) currentPage.remove();
 
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
@@ -186,7 +182,8 @@ function renderTab(tab, mpViews, sellerView) {
       })
     );
 
-    content.appendChild(page);
+    currentPage = page;
+    app.appendChild(page);
     return;
   }
 
@@ -252,5 +249,6 @@ function renderTab(tab, mpViews, sellerView) {
     })
   );
 
-  content.appendChild(page);
+  currentPage = page;
+  app.appendChild(page);
 }
