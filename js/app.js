@@ -1,6 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.2 — SHIPMENT CEILING FIXED
+ * VA4.3 — FILTERS SAFE IMPLEMENTATION
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -40,19 +40,34 @@ import { renderSummaryTable } from "./ui/render/summaryTables.js";
 import { renderReportTable } from "./ui/render/reportTable.js";
 
 /* =============================
+   GLOBAL STATE (FILTER ONLY)
+============================= */
+
+const filterState = {
+  fc: "ALL",
+  search: ""
+};
+
+let mpViews = {};
+let sellerView = null;
+let currentPage = null;
+let currentTab = "AMAZON";
+
+/* =============================
    BOOTSTRAP
 ============================= */
 
 const app = document.getElementById("app");
 app.innerHTML = "";
 
-/* HEADER + FILTERS */
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
-let currentPage = null;
-
 init();
+
+/* =============================
+   INIT
+============================= */
 
 async function init() {
   try {
@@ -80,7 +95,6 @@ async function init() {
     });
 
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
-    const mpViews = {};
     const allMpPlanningRows = [];
 
     MPs.forEach(mp => {
@@ -129,11 +143,9 @@ async function init() {
       }
     });
 
-    const sellerView = buildSellerView({
+    sellerView = buildSellerView({
       summaries: {
-        shipment: sellerSummary({
-          sellerRows: sellerResult.rows
-        })
+        shipment: sellerSummary({ sellerRows: sellerResult.rows })
       },
       reportRows: sellerResult.rows,
       filters: {
@@ -141,12 +153,16 @@ async function init() {
       }
     });
 
-    /* TABS — DIRECT CHILD OF APP (FIX) */
     app.appendChild(
-      renderTabs(tab => renderTab(tab, mpViews, sellerView))
+      renderTabs(tab => {
+        currentTab = tab;
+        resetFilters();
+        renderTab();
+      })
     );
 
-    renderTab("AMAZON", mpViews, sellerView);
+    wireFilters();
+    renderTab();
 
   } catch (e) {
     console.error(e);
@@ -156,13 +172,66 @@ async function init() {
 }
 
 /* =============================
+   FILTER WIRING
+============================= */
+
+function wireFilters() {
+  const fcSelect = document.getElementById("filter-fc");
+  const searchInput = document.getElementById("search");
+
+  fcSelect.onchange = () => {
+    filterState.fc = fcSelect.value;
+    renderTab();
+  };
+
+  searchInput.oninput = () => {
+    filterState.search = searchInput.value.toLowerCase();
+    renderTab();
+  };
+}
+
+function resetFilters() {
+  filterState.fc = "ALL";
+  filterState.search = "";
+
+  const fc = document.getElementById("filter-fc");
+  const search = document.getElementById("search");
+
+  if (fc) fc.value = "ALL";
+  if (search) search.value = "";
+}
+
+/* =============================
+   FILTER HELPERS
+============================= */
+
+function applyRowFilters(rows) {
+  return rows.filter(r => {
+    if (filterState.fc !== "ALL" && r.fc !== filterState.fc) return false;
+
+    if (filterState.search) {
+      const s = filterState.search;
+      if (
+        !String(r.sku).toLowerCase().includes(s) &&
+        !String(r.style).toLowerCase().includes(s)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+/* =============================
    TAB RENDERING
 ============================= */
 
-function renderTab(tab, mpViews, sellerView) {
+function renderTab() {
   if (currentPage) currentPage.remove();
 
-  if (tab === "SELLER") {
+  if (currentTab === "SELLER") {
+    const rows = applyRowFilters(sellerView.report.rows);
+
     const page = renderPageShell("SELLER");
     const sections = page.querySelectorAll(".section");
 
@@ -170,14 +239,14 @@ function renderTab(tab, mpViews, sellerView) {
       renderSummaryTable({
         title: "Seller Shipment Summary",
         columns: ["Total Seller Sale", "Shipment Qty"],
-        rows: sellerView.summaries.shipment,
+        rows: sellerSummary({ sellerRows: rows }),
         showGrandTotal: false
       })
     );
 
     sections[1].replaceWith(
       renderReportTable({
-        rows: sellerView.report.rows,
+        rows,
         includeRecall: false
       })
     );
@@ -187,15 +256,17 @@ function renderTab(tab, mpViews, sellerView) {
     return;
   }
 
-  const view = mpViews[tab];
-  const page = renderPageShell(tab);
+  const view = mpViews[currentTab];
+  const filteredRows = applyRowFilters(view.report.rows);
+
+  const page = renderPageShell(currentTab);
   const sections = page.querySelectorAll(".section");
 
   sections[0].replaceWith(
     renderSummaryTable({
       title: "FC Wise Stock",
       columns: ["FC", "Total Stock"],
-      rows: view.summaries.fcStock,
+      rows: fcStockSummary(filteredRows, currentTab),
       showGrandTotal: true
     })
   );
@@ -204,7 +275,7 @@ function renderTab(tab, mpViews, sellerView) {
     renderSummaryTable({
       title: "FC Wise Sale | DRR | Stock Cover",
       columns: ["FC", "Total Sale", "DRR", "Stock Cover"],
-      rows: view.summaries.fcSale,
+      rows: fcSaleSummary(filteredRows, [], currentTab),
       showGrandTotal: true
     })
   );
@@ -213,7 +284,7 @@ function renderTab(tab, mpViews, sellerView) {
     renderSummaryTable({
       title: "MP Wise Top 10 SKUs",
       columns: ["SKU", "Total Sale", "DRR"],
-      rows: view.summaries.topSkus
+      rows: mpTopSkuSummary(filteredRows)
     })
   );
 
@@ -221,7 +292,7 @@ function renderTab(tab, mpViews, sellerView) {
     renderSummaryTable({
       title: "MP Wise Top 10 Styles",
       columns: ["Style", "Total Sale", "DRR"],
-      rows: view.summaries.topStyles
+      rows: mpTopStyleSummary(filteredRows)
     })
   );
 
@@ -237,14 +308,14 @@ function renderTab(tab, mpViews, sellerView) {
         "Shipment Qty",
         "Recall Qty"
       ],
-      rows: view.summaries.shipment,
+      rows: shipmentSummary(filteredRows),
       showGrandTotal: true
     })
   );
 
   sections[5].replaceWith(
     renderReportTable({
-      rows: view.report.rows,
+      rows: filteredRows,
       includeRecall: true
     })
   );
