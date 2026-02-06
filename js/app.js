@@ -1,10 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.2 — UI STRUCTURE FIX (STICKY CONTROLS)
- *
- * ❌ No logic changes
- * ❌ No calculation changes
- * ✅ Only DOM structure corrected
+ * VA4.2 — SHIPMENT CEILING FIXED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -21,6 +17,7 @@ import {
 import { planMP } from "./domain/mp/mpPlanner.js";
 import { deriveSellerSales } from "./domain/seller/sellerDerivation.js";
 import { planSellerShipments } from "./domain/seller/sellerPlanner.js";
+import { enforceShipmentCeiling } from "./domain/mp/enforceShipmentCeiling.js";
 
 /* SUMMARIES */
 import { fcStockSummary } from "./summaries/fcStockSummary.js";
@@ -49,67 +46,42 @@ import { renderReportTable } from "./ui/render/reportTable.js";
 const app = document.getElementById("app");
 app.innerHTML = "";
 
-/* -----------------------------
-   HEADER (NON-STICKY)
------------------------------ */
 app.appendChild(renderAppHeader());
-
-/* -----------------------------
-   STICKY CONTROLS (FILTERS + TABS)
------------------------------ */
-const stickyControls = document.createElement("div");
-stickyControls.className = "sticky-controls";
-
-const filtersBar = renderFiltersBar();
-stickyControls.appendChild(filtersBar);
+app.appendChild(renderFiltersBar());
 
 const tabsContainer = document.createElement("div");
-stickyControls.appendChild(tabsContainer);
-
-app.appendChild(stickyControls);
-
-/* -----------------------------
-   MAIN CONTENT
------------------------------ */
 const content = document.createElement("div");
-content.className = "app-content";
-app.appendChild(content);
 
-/* =============================
-   INIT
-============================= */
+app.appendChild(tabsContainer);
+app.appendChild(content);
 
 init();
 
 async function init() {
   try {
-    /* 1️⃣ LOAD */
-    const [saleCSV, fcCSV, uniCSV, remarksCSV] = await Promise.all([
-      loadCSV(SOURCES.sale30D),
-      loadCSV(SOURCES.fcStock),
-      loadCSV(SOURCES.uniwareStock),
-      loadCSV(SOURCES.companyRemarks)
-    ]);
+    const [saleCSV, fcCSV, uniCSV, remarksCSV] =
+      await Promise.all([
+        loadCSV(SOURCES.sale30D),
+        loadCSV(SOURCES.fcStock),
+        loadCSV(SOURCES.uniwareStock),
+        loadCSV(SOURCES.companyRemarks)
+      ]);
 
-    /* 2️⃣ PARSE */
     const saleRows = parseCSV(saleCSV);
     const fcRows = parseCSV(fcCSV);
     const uniRows = parseCSV(uniCSV);
     const remarksRows = parseCSV(remarksCSV);
 
-    /* 3️⃣ NORMALIZE */
     const sale30D = normalizeSale30D(saleRows);
     const fcStock = normalizeFCStock(fcRows);
     const uniwareStock = normalizeUniwareStock(uniRows);
     const companyRemarks = normalizeCompanyRemarks(remarksRows);
 
-    /* 4️⃣ DERIVE SELLER */
     const { mpSales, sellerSales } = deriveSellerSales({
       sale30D,
       fcStock
     });
 
-    /* 5️⃣ MP PLANNING */
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
     const allMpPlanningRows = [];
@@ -123,18 +95,21 @@ async function init() {
         uniwareStock
       });
 
-      allMpPlanningRows.push(...mpResult.rows);
+      /* 🔑 APPLY CEILING HERE (REAL FIX) */
+      const fixedRows = enforceShipmentCeiling(mpResult.rows);
+
+      allMpPlanningRows.push(...fixedRows);
 
       mpViews[mp] = buildMpView({
         mp,
         summaries: {
           fcStock: fcStockSummary(fcStock, mp),
-          fcSale: fcSaleSummary(mpResult.rows, fcStock, mp),
-          topSkus: mpTopSkuSummary(mpResult.rows),
-          topStyles: mpTopStyleSummary(mpResult.rows),
-          shipment: shipmentSummary(mpResult.rows)
+          fcSale: fcSaleSummary(fixedRows, fcStock, mp),
+          topSkus: mpTopSkuSummary(fixedRows),
+          topStyles: mpTopStyleSummary(fixedRows),
+          shipment: shipmentSummary(fixedRows)
         },
-        reportRows: mpResult.rows,
+        reportRows: fixedRows,
         filters: {
           fcList: [
             ...new Set(
@@ -147,19 +122,16 @@ async function init() {
       });
     });
 
-    /* 6️⃣ SELLER PLANNING */
-    const fallbackFCsByMP = {
-      AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
-      FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
-      MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"]
-    };
-
     const sellerResult = planSellerShipments({
       sellerSales,
       uniwareStock,
       companyRemarks,
       mpPlanningRows: allMpPlanningRows,
-      fallbackFCsByMP
+      fallbackFCsByMP: {
+        AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
+        FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
+        MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"]
+      }
     });
 
     const sellerView = buildSellerView({
@@ -174,7 +146,6 @@ async function init() {
       }
     });
 
-    /* 7️⃣ TABS */
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
@@ -184,9 +155,7 @@ async function init() {
   } catch (e) {
     console.error(e);
     content.innerHTML =
-      `<div style="padding:16px;color:red">
-        Failed to load app. Check console.
-      </div>`;
+      `<div style="padding:16px;color:red">Failed to load app. Check console.</div>`;
   }
 }
 
