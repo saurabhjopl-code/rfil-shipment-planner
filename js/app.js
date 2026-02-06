@@ -1,10 +1,9 @@
 /**
  * APP ORCHESTRATOR
- * VA1.0 + SELLER WIRED
- * STEP 5 — Unified SKU Pool Reconciliation
+ * VA4.0 — UNIFIED DEMAND + ALLOCATION ENGINE
  *
- * MP planner LOCKED
- * Seller planner LOCKED
+ * VA3 planners untouched (frozen)
+ * VA4 engine ACTIVE
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -17,10 +16,13 @@ import {
   normalizeCompanyRemarks
 } from "./ingest/normalize.js";
 
-/* DOMAIN */
-import { planMP } from "./domain/mp/mpPlanner.js";
+/* VA3 — DERIVATION ONLY */
 import { deriveSellerSales } from "./domain/seller/sellerDerivation.js";
-import { planSellerShipments } from "./domain/seller/sellerPlanner.js";
+
+/* VA4 ENGINE */
+import { buildDemandUniverse } from "./domain/va4/buildDemandUniverse.js";
+import { applyAllocation } from "./domain/va4/applyAllocation.js";
+import { distributeToFC } from "./domain/va4/distributeToFC.js";
 
 /* SUMMARIES */
 import { fcStockSummary } from "./summaries/fcStockSummary.js";
@@ -93,105 +95,89 @@ async function init() {
       fcStock
     });
 
-    /* 5️⃣ MP PLANNING */
+    /* =============================
+       VA4 ENGINE
+    ============================= */
+
+    /* Phase A — Demand + DW */
+    const demandRows = buildDemandUniverse({
+      mpSales,
+      sellerSales
+    });
+
+    /* Phase B — 40% Allocation */
+    const allocatedRows = applyAllocation({
+      demandRows,
+      uniwareStock
+    });
+
+    /* Phase C — FC Distribution */
+    const fallbackFCsByMP = {
+      AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
+      FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
+      MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"],
+      SELLER: []
+    };
+
+    const finalRows = distributeToFC({
+      allocatedRows,
+      fallbackFCsByMP
+    });
+
+    /* =============================
+       BUILD MP VIEWS
+    ============================= */
+
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
-    const allMpPlanningRows = [];
 
     MPs.forEach(mp => {
-      const mpResult = planMP({
-        mp,
-        mpSales,
-        fcStock,
-        companyRemarks,
-        uniwareStock
-      });
-
-      allMpPlanningRows.push(...mpResult.rows);
+      const mpRows = finalRows.filter(r => r.mp === mp);
 
       mpViews[mp] = buildMpView({
         mp,
         summaries: {
           fcStock: fcStockSummary(fcStock, mp),
-          fcSale: fcSaleSummary(mpResult.rows, fcStock, mp),
-          topSkus: mpTopSkuSummary(mpResult.rows),
-          topStyles: mpTopStyleSummary(mpResult.rows),
-          shipment: shipmentSummary(mpResult.rows)
+          fcSale: fcSaleSummary(mpRows, fcStock, mp),
+          topSkus: mpTopSkuSummary(mpRows),
+          topStyles: mpTopStyleSummary(mpRows),
+          shipment: shipmentSummary(mpRows)
         },
-        reportRows: mpResult.rows,
+        reportRows: mpRows,
         filters: {
           fcList: [
             ...new Set(
-              fcStock
-                .filter(r => r.mp === mp)
-                .map(r => r.warehouseId)
+              mpRows
+                .map(r => r.fc)
+                .filter(Boolean)
             )
           ]
         }
       });
     });
 
-    /* 6️⃣ SELLER PLANNING */
-    const fallbackFCsByMP = {
-      AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
-      FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
-      MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"]
-    };
-
-    const sellerResult = planSellerShipments({
-      sellerSales,
-      uniwareStock,
-      companyRemarks,
-      mpPlanningRows: allMpPlanningRows,
-      fallbackFCsByMP
-    });
-
     /* =============================
-       🔒 STEP 5 — UNIFIED SKU POOL
-       MP priority, Seller scaled
+       SELLER VIEW
     ============================= */
 
-    const uniwareBySku = new Map();
-    uniwareStock.forEach(r => {
-      uniwareBySku.set(
-        r.sku,
-        (uniwareBySku.get(r.sku) || 0) + r.qty
-      );
-    });
-
-    const mpShipmentBySku = new Map();
-    allMpPlanningRows.forEach(r => {
-      mpShipmentBySku.set(
-        r.sku,
-        (mpShipmentBySku.get(r.sku) || 0) + r.shipmentQty
-      );
-    });
-
-    sellerResult.rows.forEach(r => {
-      const uniwareQty = uniwareBySku.get(r.sku) || 0;
-      const cap = Math.floor(uniwareQty * 0.4);
-      const mpUsed = mpShipmentBySku.get(r.sku) || 0;
-      const remaining = Math.max(0, cap - mpUsed);
-
-      if (r.shipmentQty > remaining) {
-        r.shipmentQty = remaining;
-        r.remarks = "Reduced due to MP priority (40% Uniware cap)";
-      }
-    });
+    const sellerRows = finalRows.filter(r => r.mp === "SELLER");
 
     const sellerView = buildSellerView({
       summaries: {
         shipment: sellerSummary({
-          sellerRows: sellerResult.rows
+          sellerRows
         })
       },
-      reportRows: sellerResult.rows,
+      reportRows: sellerRows,
       filters: {
-        fcList: [...new Set(sellerResult.rows.map(r => r.fc))]
+        fcList: [...new Set(sellerRows.map(r => r.fc))]
       }
     });
 
-    /* 7️⃣ TABS */
+    /* =============================
+       TABS
+    ============================= */
+
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
@@ -212,6 +198,7 @@ async function init() {
 function renderTab(tab, mpViews, sellerView) {
   content.innerHTML = "";
 
+  /* SELLER TAB */
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
     const sections = page.querySelectorAll(".section");
@@ -219,10 +206,7 @@ function renderTab(tab, mpViews, sellerView) {
     sections[0].replaceWith(
       renderSummaryTable({
         title: "Seller Shipment Summary",
-        columns: [
-          "Total Seller Sale",
-          "Shipment Qty"
-        ],
+        columns: ["Total Seller Sale", "Shipment Qty"],
         rows: sellerView.summaries.shipment,
         showGrandTotal: false
       })
@@ -239,6 +223,7 @@ function renderTab(tab, mpViews, sellerView) {
     return;
   }
 
+  /* MP TAB */
   const view = mpViews[tab];
   const page = renderPageShell(tab);
   const sections = page.querySelectorAll(".section");
