@@ -1,26 +1,36 @@
+/**
+ * FILTERS BAR
+ *
+ * - FC dropdown (dynamic)
+ * - Search (Style / SKU)
+ * - Reset button
+ */
+
 export function renderFiltersBar() {
-  const bar = document.createElement("div");
-  bar.className = "filter-bar";
+  const wrapper = document.createElement("div");
+  wrapper.className = "filters-bar";
 
-  bar.innerHTML = `
-    <select id="filter-mp">
-      <option value="ALL">All MPs</option>
-      <option value="AMAZON">Amazon</option>
-      <option value="FLIPKART">Flipkart</option>
-      <option value="MYNTRA">Myntra</option>
-      <option value="SELLER">Seller</option>
-    </select>
+  wrapper.innerHTML = `
+    <div class="filter-group">
+      <label>FC</label>
+      <select id="fcFilter">
+        <option value="">All FCs</option>
+      </select>
+    </div>
 
-    <select id="filter-fc">
-      <option value="ALL">All FCs</option>
-    </select>
+    <div class="filter-group">
+      <label>Search (Style / SKU)</label>
+      <input
+        type="text"
+        id="searchFilter"
+        placeholder="Type Style or SKU"
+      />
+    </div>
 
-    <input
-      type="text"
-      id="search"
-      placeholder="Search Style or SKU"
-    />
+    <div class="filter-group">
+      <button id="resetFilters">Reset</button>
+    </div>
   `;
 
-  return bar;
+  return wrapper;
 }
