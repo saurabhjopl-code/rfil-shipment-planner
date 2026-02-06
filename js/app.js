@@ -1,6 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.3 — FILTERS WIRED (REPORT LEVEL, FIXED)
+ * VA4.3 — FILTER SAFE FIX
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -39,9 +39,6 @@ import { renderPageShell } from "./ui/layout/pageShell.js";
 import { renderSummaryTable } from "./ui/render/summaryTables.js";
 import { renderReportTable } from "./ui/render/reportTable.js";
 
-/* FILTER CONTROLLER */
-import { createFilterController } from "./ui/interaction/filterController.js";
-
 /* =============================
    BOOTSTRAP
 ============================= */
@@ -52,8 +49,12 @@ app.innerHTML = "";
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
-let currentTab = "AMAZON";
-let currentPage = null;
+const tabsContainer = document.createElement("div");
+const content = document.createElement("div");
+
+app.appendChild(tabsContainer);
+app.appendChild(content);
+
 let mpViews = {};
 let sellerView = null;
 
@@ -112,16 +113,7 @@ async function init() {
           topStyles: mpTopStyleSummary(fixedRows),
           shipment: shipmentSummary(fixedRows)
         },
-        reportRows: fixedRows,
-        filters: {
-          fcList: [
-            ...new Set(
-              fcStock
-                .filter(r => r.mp === mp)
-                .map(r => r.warehouseId)
-            )
-          ]
-        }
+        reportRows: fixedRows
       });
     });
 
@@ -139,40 +131,20 @@ async function init() {
 
     sellerView = buildSellerView({
       summaries: {
-        shipment: sellerSummary({
-          sellerRows: sellerResult.rows
-        })
+        shipment: sellerSummary({ sellerRows: sellerResult.rows })
       },
-      reportRows: sellerResult.rows,
-      filters: {
-        fcList: [...new Set(sellerResult.rows.map(r => r.fc))]
-      }
+      reportRows: sellerResult.rows
     });
 
-    /* ---------- TABS ---------- */
-    app.appendChild(
-      renderTabs(tab => {
-        currentTab = tab;
-        renderTab(tab);
-      })
+    tabsContainer.appendChild(
+      renderTabs(tab => renderTab(tab))
     );
-
-    /* ---------- FILTER CONTROLLER ---------- */
-    createFilterController({
-      getActiveView: mp =>
-        mp === "SELLER"
-          ? sellerView
-          : mpViews[mp || currentTab],
-      onFilterApplied: ({ filteredRows, originalView }) => {
-        renderFilteredReport(filteredRows);
-      }
-    });
 
     renderTab("AMAZON");
 
   } catch (e) {
     console.error(e);
-    app.innerHTML +=
+    content.innerHTML =
       `<div style="padding:16px;color:red">Failed to load app. Check console.</div>`;
   }
 }
@@ -182,7 +154,7 @@ async function init() {
 ============================= */
 
 function renderTab(tab) {
-  if (currentPage) currentPage.remove();
+  content.innerHTML = "";
 
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
@@ -199,13 +171,12 @@ function renderTab(tab) {
 
     sections[1].replaceWith(
       renderReportTable({
-        rows: sellerView.reportRows,
+        rows: sellerView.report.rows,
         includeRecall: false
       })
     );
 
-    currentPage = page;
-    app.appendChild(page);
+    content.appendChild(page);
     return;
   }
 
@@ -266,30 +237,10 @@ function renderTab(tab) {
 
   sections[5].replaceWith(
     renderReportTable({
-      rows: view.reportRows,
+      rows: view.report.rows,
       includeRecall: true
     })
   );
 
-  currentPage = page;
-  app.appendChild(page);
-}
-
-/* =============================
-   FILTERED REPORT RENDER (FIXED)
-============================= */
-
-function renderFilteredReport(rows) {
-  const reportSection = document.querySelector(
-    ".page .section:last-of-type"
-  );
-
-  if (!reportSection) return;
-
-  reportSection.replaceWith(
-    renderReportTable({
-      rows,
-      includeRecall: currentTab !== "SELLER"
-    })
-  );
+  content.appendChild(page);
 }
