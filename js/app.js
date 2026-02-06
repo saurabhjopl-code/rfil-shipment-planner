@@ -1,6 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.2 — SHIPMENT CEILING FIXED
+ * VA4.3 — FILTERS WIRED (REPORT LEVEL)
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -39,6 +39,9 @@ import { renderPageShell } from "./ui/layout/pageShell.js";
 import { renderSummaryTable } from "./ui/render/summaryTables.js";
 import { renderReportTable } from "./ui/render/reportTable.js";
 
+/* FILTER CONTROLLER */
+import { createFilterController } from "./ui/interaction/filterController.js";
+
 /* =============================
    BOOTSTRAP
 ============================= */
@@ -46,11 +49,17 @@ import { renderReportTable } from "./ui/render/reportTable.js";
 const app = document.getElementById("app");
 app.innerHTML = "";
 
-/* HEADER + FILTERS */
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
+let currentTab = "AMAZON";
 let currentPage = null;
+let mpViews = {};
+let sellerView = null;
+
+/* =============================
+   INIT
+============================= */
 
 init();
 
@@ -80,7 +89,6 @@ async function init() {
     });
 
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
-    const mpViews = {};
     const allMpPlanningRows = [];
 
     MPs.forEach(mp => {
@@ -129,7 +137,7 @@ async function init() {
       }
     });
 
-    const sellerView = buildSellerView({
+    sellerView = buildSellerView({
       summaries: {
         shipment: sellerSummary({
           sellerRows: sellerResult.rows
@@ -141,12 +149,26 @@ async function init() {
       }
     });
 
-    /* TABS — DIRECT CHILD OF APP (FIX) */
+    /* ---------- TABS ---------- */
     app.appendChild(
-      renderTabs(tab => renderTab(tab, mpViews, sellerView))
+      renderTabs(tab => {
+        currentTab = tab;
+        renderTab(tab);
+      })
     );
 
-    renderTab("AMAZON", mpViews, sellerView);
+    /* ---------- FILTER CONTROLLER ---------- */
+    createFilterController({
+      getActiveView: mp =>
+        mp === "SELLER"
+          ? sellerView
+          : mpViews[mp || currentTab],
+      onFilterApplied: ({ filteredRows, originalView }) => {
+        renderFilteredReport(originalView, filteredRows);
+      }
+    });
+
+    renderTab("AMAZON");
 
   } catch (e) {
     console.error(e);
@@ -159,7 +181,7 @@ async function init() {
    TAB RENDERING
 ============================= */
 
-function renderTab(tab, mpViews, sellerView) {
+function renderTab(tab) {
   if (currentPage) currentPage.remove();
 
   if (tab === "SELLER") {
@@ -177,7 +199,7 @@ function renderTab(tab, mpViews, sellerView) {
 
     sections[1].replaceWith(
       renderReportTable({
-        rows: sellerView.report.rows,
+        rows: sellerView.reportRows,
         includeRecall: false
       })
     );
@@ -244,11 +266,30 @@ function renderTab(tab, mpViews, sellerView) {
 
   sections[5].replaceWith(
     renderReportTable({
-      rows: view.report.rows,
+      rows: view.reportRows,
       includeRecall: true
     })
   );
 
   currentPage = page;
   app.appendChild(page);
+}
+
+/* =============================
+   FILTERED REPORT RENDER
+============================= */
+
+function renderFilteredReport(view, rows) {
+  const reportSection = document.querySelector(
+    ".page .section:last-of-type"
+  );
+
+  if (!reportSection) return;
+
+  reportSection.replaceWith(
+    renderReportTable({
+      rows,
+      includeRecall: view.mp !== "SELLER"
+    })
+  );
 }
