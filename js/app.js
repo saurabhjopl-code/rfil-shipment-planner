@@ -1,6 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.3 — FILTERS WIRED (REPORT LEVEL)
+ * VA4.3 — FILTERS WIRED (REPORT LEVEL, FIXED)
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -164,7 +164,7 @@ async function init() {
           ? sellerView
           : mpViews[mp || currentTab],
       onFilterApplied: ({ filteredRows, originalView }) => {
-        renderFilteredReport(originalView, filteredRows);
+        renderFilteredReport(filteredRows);
       }
     });
 
@@ -276,10 +276,10 @@ function renderTab(tab) {
 }
 
 /* =============================
-   FILTERED REPORT RENDER
+   FILTERED REPORT RENDER (FIXED)
 ============================= */
 
-function renderFilteredReport(view, rows) {
+function renderFilteredReport(rows) {
   const reportSection = document.querySelector(
     ".page .section:last-of-type"
   );
@@ -289,7 +289,7 @@ function renderFilteredReport(view, rows) {
   reportSection.replaceWith(
     renderReportTable({
       rows,
-      includeRecall: view.mp !== "SELLER"
+      includeRecall: currentTab !== "SELLER"
     })
   );
 }
