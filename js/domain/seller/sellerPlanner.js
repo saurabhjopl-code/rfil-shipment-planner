@@ -1,13 +1,12 @@
 import { calculateDRR } from "../shared/metrics.js";
 
 /**
- * SELLER SHIPMENT PLANNER — VA3.5 (CONSOLIDATED)
+ * SELLER SHIPMENT PLANNER — STEP 2 (FIXED, NON-DESTRUCTIVE)
  *
- * Guarantees:
- * - One row per MP + SKU + Style
- * - Shipment ≤ Actual demand
- * - Uniware 40% never exceeded
- * - No duplicate rows
+ * ✔ SKU-wise Uniware 40% allocation
+ * ✔ DW-based MP split
+ * ✔ Seller allocation only
+ * ✔ MP untouched
  */
 
 export function planSellerShipments({
@@ -31,7 +30,6 @@ export function planSellerShipments({
   ----------------------------- */
   const uniwareByUniSku = new Map();
   uniwareStock.forEach(r => {
-    if (!r.uniwareSku) return;
     uniwareByUniSku.set(
       r.uniwareSku,
       (uniwareByUniSku.get(r.uniwareSku) || 0) + r.qty
@@ -39,135 +37,113 @@ export function planSellerShipments({
   });
 
   /* -----------------------------
-     MP shipped qty per SKU
+     Seller demand by SKU + Uniware SKU
   ----------------------------- */
-  const mpShipmentBySku = new Map();
+  const sellerDemand = new Map();
+
+  sellerSales.forEach(r => {
+    if (closedStyles.has(r.style)) return;
+
+    const drr = calculateDRR(r.qty);
+    const actualShipmentQty = Math.floor(45 * drr);
+    if (actualShipmentQty <= 0) return;
+
+    const key = `${r.sku}|${r.uniwareSku}`;
+    if (!sellerDemand.has(key)) {
+      sellerDemand.set(key, {
+        sku: r.sku,
+        uniwareSku: r.uniwareSku,
+        style: r.style,
+        saleQty: 0,
+        actualShipmentQty: 0
+      });
+    }
+
+    const row = sellerDemand.get(key);
+    row.saleQty += r.qty;
+    row.actualShipmentQty += actualShipmentQty;
+  });
+
+  /* -----------------------------
+     MP + Seller sale totals (for DW)
+  ----------------------------- */
+  const totalSaleBySku = new Map();
+
   mpPlanningRows.forEach(r => {
-    mpShipmentBySku.set(
+    totalSaleBySku.set(
       r.sku,
-      (mpShipmentBySku.get(r.sku) || 0) + r.shipmentQty
+      (totalSaleBySku.get(r.sku) || 0) + r.saleQty
+    );
+  });
+
+  sellerSales.forEach(r => {
+    totalSaleBySku.set(
+      r.sku,
+      (totalSaleBySku.get(r.sku) || 0) + r.qty
     );
   });
 
   /* -----------------------------
-     🔑 CONSOLIDATE seller demand
-     (MP + SKU + STYLE)
-  ----------------------------- */
-  const consolidated = new Map();
-
-  sellerSales.forEach(r => {
-    if (closedStyles.has(r.style)) return;
-    if (!r.uniwareSku) return;
-
-    const key = `${r.mp}|${r.sku}|${r.style}|${r.uniwareSku}`;
-
-    if (!consolidated.has(key)) {
-      consolidated.set(key, {
-        mp: r.mp,
-        sku: r.sku,
-        style: r.style,
-        uniwareSku: r.uniwareSku,
-        saleQty: 0
-      });
-    }
-
-    consolidated.get(key).saleQty += r.qty;
-  });
-
-  /* -----------------------------
-     Group consolidated demand by SKU
-  ----------------------------- */
-  const sellerBySku = new Map();
-
-  consolidated.forEach(r => {
-    const drr = calculateDRR(r.saleQty);
-    const actualDemand = Math.floor(45 * drr);
-    if (actualDemand <= 0) return;
-
-    if (!sellerBySku.has(r.sku)) {
-      sellerBySku.set(r.sku, []);
-    }
-
-    sellerBySku.get(r.sku).push({
-      mp: r.mp,
-      sku: r.sku,
-      style: r.style,
-      uniwareSku: r.uniwareSku,
-      saleQty: r.saleQty,
-      actualShipmentQty: actualDemand
-    });
-  });
-
-  /* -----------------------------
-     Allocation per SKU
+     Allocate Seller shipments
   ----------------------------- */
   const rows = [];
 
-  sellerBySku.forEach((demands, sku) => {
+  sellerDemand.forEach(demand => {
     const uniwareQty =
-      uniwareByUniSku.get(demands[0].uniwareSku) || 0;
+      uniwareByUniSku.get(demand.uniwareSku) || 0;
+    if (uniwareQty <= 0) return;
 
     const allocatable = Math.floor(uniwareQty * 0.4);
     if (allocatable <= 0) return;
 
-    const mpUsed = mpShipmentBySku.get(sku) || 0;
-    const remainingPool = Math.max(0, allocatable - mpUsed);
-    if (remainingPool <= 0) return;
+    const totalSale = totalSaleBySku.get(demand.sku) || 0;
+    if (totalSale <= 0) return;
 
-    const totalSellerSale = demands.reduce(
-      (sum, d) => sum + d.saleQty,
-      0
+    const sellerDW = demand.saleQty / totalSale;
+
+    const sellerAllocation = Math.min(
+      Math.floor(allocatable * sellerDW),
+      demand.actualShipmentQty
     );
-    if (totalSellerSale <= 0) return;
 
-    demands.forEach(d => {
-      const dw = d.saleQty / totalSellerSale;
+    if (sellerAllocation <= 0) return;
 
-      let allocated = remainingPool * dw;
-      allocated =
-        allocated > 0 && allocated < 1
-          ? 1
-          : Math.floor(allocated);
+    /* -----------------------------
+       FC selection via DW
+    ----------------------------- */
+    let candidates = [];
 
-      const shipmentQty = Math.min(
-        allocated,
-        d.actualShipmentQty
-      );
-
-      if (shipmentQty <= 0) return;
-
-      /* FC selection */
-      let candidates = [];
-
-      mpPlanningRows
-        .filter(r => r.mp === d.mp && r.sku === d.sku)
-        .forEach(r =>
-          candidates.push({ fc: r.fc, dw: r.finalDW || 0 })
-        );
-
-      if (candidates.length === 0) {
-        (fallbackFCsByMP[d.mp] || []).forEach(fc =>
-          candidates.push({ fc, dw: 0 })
-        );
-      }
-
-      candidates.sort((a, b) => b.dw - a.dw);
-
-      rows.push({
-        style: d.style,
-        sku: d.sku,
-        mp: d.mp,
-        fc: candidates[0]?.fc || "NA",
-        saleQty: d.saleQty,
-        drr: Number((d.saleQty / 30).toFixed(2)),
-        actualShipmentQty: d.actualShipmentQty,
-        shipmentQty,
-        action: "SHIP",
-        remarks:
-          shipmentQty < d.actualShipmentQty
-            ? "Capped by demand"
-            : "Allocated via DW"
+    mpPlanningRows
+      .filter(r => r.sku === demand.sku)
+      .forEach(r => {
+        candidates.push({
+          fc: r.fc,
+          dw: r.finalDW || 0
+        });
       });
+
+    if (candidates.length === 0) {
+      Object.values(fallbackFCsByMP).forEach(list =>
+        list.forEach(fc => candidates.push({ fc, dw: 0 }))
+      );
+    }
+
+    candidates.sort((a, b) => b.dw - a.dw);
+
+    rows.push({
+      style: demand.style,
+      sku: demand.sku,
+      fc: candidates[0].fc,
+      saleQty: demand.saleQty,
+      drr: Number((demand.saleQty / 30).toFixed(2)),
+      fcStock: 0,
+      stockCover: 0,
+      actualShipmentQty: demand.actualShipmentQty,
+      shipmentQty: sellerAllocation,
+      remarks:
+        sellerAllocation < demand.actualShipmentQty
+          ? "DW-based partial allocation"
+          : "DW allocation"
     });
   });
 

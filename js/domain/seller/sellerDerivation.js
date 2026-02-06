@@ -1,10 +1,25 @@
 /**
- * SELLER DERIVATION — VA3.3
+ * SELLER DERIVATION
  *
  * Pure classification logic.
- * Enforces MP normalization.
+ * No shipment logic.
+ * No Uniware logic.
+ * No MP logic changes.
  */
 
+/**
+ * Derive MP sales vs SELLER sales
+ *
+ * @param {Object} input
+ * @param {Array} input.sale30D  - normalized sale data
+ * @param {Array} input.fcStock  - normalized FC stock data
+ *
+ * @returns {Object}
+ * {
+ *   mpSales:     Sale rows fulfilled by FCs
+ *   sellerSales: Sale rows fulfilled by Seller
+ * }
+ */
 export function deriveSellerSales({ sale30D, fcStock }) {
   /* -----------------------------
      Build FC list by MP
@@ -12,11 +27,10 @@ export function deriveSellerSales({ sale30D, fcStock }) {
   const fcByMP = new Map();
 
   fcStock.forEach(r => {
-    const mp = r.mp.trim().toUpperCase();
-    if (!fcByMP.has(mp)) {
-      fcByMP.set(mp, new Set());
+    if (!fcByMP.has(r.mp)) {
+      fcByMP.set(r.mp, new Set());
     }
-    fcByMP.get(mp).add(r.warehouseId);
+    fcByMP.get(r.mp).add(r.warehouseId);
   });
 
   /* -----------------------------
@@ -26,18 +40,12 @@ export function deriveSellerSales({ sale30D, fcStock }) {
   const sellerSales = [];
 
   sale30D.forEach(r => {
-    const mp = r.mp.trim().toUpperCase();
-    const fcSet = fcByMP.get(mp);
-
-    const normalizedRow = {
-      ...r,
-      mp
-    };
+    const fcSet = fcByMP.get(r.mp);
 
     if (fcSet && fcSet.has(r.warehouseId)) {
-      mpSales.push(normalizedRow);
+      mpSales.push(r);
     } else {
-      sellerSales.push(normalizedRow);
+      sellerSales.push(r);
     }
   });
 

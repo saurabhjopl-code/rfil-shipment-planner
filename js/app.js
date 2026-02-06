@@ -1,6 +1,10 @@
 /**
  * APP ORCHESTRATOR
- * VA3.2 — STABLE BASELINE
+ * VA1.0 + SELLER WIRED
+ * STEP 5 — Unified SKU Pool Reconciliation
+ *
+ * MP planner LOCKED
+ * Seller planner LOCKED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -62,6 +66,7 @@ init();
 
 async function init() {
   try {
+    /* 1️⃣ LOAD */
     const [saleCSV, fcCSV, uniCSV, remarksCSV] =
       await Promise.all([
         loadCSV(SOURCES.sale30D),
@@ -70,16 +75,25 @@ async function init() {
         loadCSV(SOURCES.companyRemarks)
       ]);
 
-    const sale30D = normalizeSale30D(parseCSV(saleCSV));
-    const fcStock = normalizeFCStock(parseCSV(fcCSV));
-    const uniwareStock = normalizeUniwareStock(parseCSV(uniCSV));
-    const companyRemarks = normalizeCompanyRemarks(parseCSV(remarksCSV));
+    /* 2️⃣ PARSE */
+    const saleRows = parseCSV(saleCSV);
+    const fcRows = parseCSV(fcCSV);
+    const uniRows = parseCSV(uniCSV);
+    const remarksRows = parseCSV(remarksCSV);
 
+    /* 3️⃣ NORMALIZE */
+    const sale30D = normalizeSale30D(saleRows);
+    const fcStock = normalizeFCStock(fcRows);
+    const uniwareStock = normalizeUniwareStock(uniRows);
+    const companyRemarks = normalizeCompanyRemarks(remarksRows);
+
+    /* 4️⃣ DERIVE SELLER */
     const { mpSales, sellerSales } = deriveSellerSales({
       sale30D,
       fcStock
     });
 
+    /* 5️⃣ MP PLANNING */
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
     const mpViews = {};
     const allMpPlanningRows = [];
@@ -117,6 +131,7 @@ async function init() {
       });
     });
 
+    /* 6️⃣ SELLER PLANNING */
     const fallbackFCsByMP = {
       AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
       FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
@@ -131,6 +146,39 @@ async function init() {
       fallbackFCsByMP
     });
 
+    /* =============================
+       🔒 STEP 5 — UNIFIED SKU POOL
+       MP priority, Seller scaled
+    ============================= */
+
+    const uniwareBySku = new Map();
+    uniwareStock.forEach(r => {
+      uniwareBySku.set(
+        r.sku,
+        (uniwareBySku.get(r.sku) || 0) + r.qty
+      );
+    });
+
+    const mpShipmentBySku = new Map();
+    allMpPlanningRows.forEach(r => {
+      mpShipmentBySku.set(
+        r.sku,
+        (mpShipmentBySku.get(r.sku) || 0) + r.shipmentQty
+      );
+    });
+
+    sellerResult.rows.forEach(r => {
+      const uniwareQty = uniwareBySku.get(r.sku) || 0;
+      const cap = Math.floor(uniwareQty * 0.4);
+      const mpUsed = mpShipmentBySku.get(r.sku) || 0;
+      const remaining = Math.max(0, cap - mpUsed);
+
+      if (r.shipmentQty > remaining) {
+        r.shipmentQty = remaining;
+        r.remarks = "Reduced due to MP priority (40% Uniware cap)";
+      }
+    });
+
     const sellerView = buildSellerView({
       summaries: {
         shipment: sellerSummary({
@@ -143,6 +191,7 @@ async function init() {
       }
     });
 
+    /* 7️⃣ TABS */
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
@@ -170,7 +219,10 @@ function renderTab(tab, mpViews, sellerView) {
     sections[0].replaceWith(
       renderSummaryTable({
         title: "Seller Shipment Summary",
-        columns: ["Total Seller Sale", "Shipment Qty"],
+        columns: [
+          "Total Seller Sale",
+          "Shipment Qty"
+        ],
         rows: sellerView.summaries.shipment,
         showGrandTotal: false
       })
@@ -178,8 +230,8 @@ function renderTab(tab, mpViews, sellerView) {
 
     sections[1].replaceWith(
       renderReportTable({
-        rows: sellerView.report.rows,   // ✅ FIX
-        mode: "SELLER"
+        rows: sellerView.report.rows,
+        includeRecall: false
       })
     );
 
@@ -244,7 +296,7 @@ function renderTab(tab, mpViews, sellerView) {
 
   sections[5].replaceWith(
     renderReportTable({
-      rows: view.report.rows,   // ✅ FIX
+      rows: view.report.rows,
       includeRecall: true
     })
   );
