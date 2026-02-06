@@ -1,7 +1,7 @@
 /**
  * APP ORCHESTRATOR
- * VA4.3 — FILTERS WIRED
- * Core logic LOCKED
+ * VA4.3 — FILTERS WIRED (FIXED)
+ * Core logic LOCKED (VA4.2)
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -63,6 +63,7 @@ app.appendChild(content);
 let mpViews = {};
 let sellerView = null;
 let activeTab = "AMAZON";
+let fcStockGlobal = [];
 
 init();
 
@@ -80,6 +81,8 @@ async function init() {
     const fcStock = normalizeFCStock(parseCSV(fcCSV));
     const uniwareStock = normalizeUniwareStock(parseCSV(uniCSV));
     const companyRemarks = normalizeCompanyRemarks(parseCSV(remarksCSV));
+
+    fcStockGlobal = fcStock;
 
     const { mpSales, sellerSales } = deriveSellerSales({ sale30D, fcStock });
 
@@ -101,13 +104,7 @@ async function init() {
 
       mpViews[mp] = buildMpView({
         mp,
-        summaries: {
-          fcStock: fcStockSummary(fcStock, mp),
-          fcSale: fcSaleSummary(fixedRows, fcStock, mp),
-          topSkus: mpTopSkuSummary(fixedRows),
-          topStyles: mpTopStyleSummary(fixedRows),
-          shipment: shipmentSummary(fixedRows)
-        },
+        summaries: {}, // summaries built dynamically after filters
         reportRows: fixedRows,
         filters: {
           fcList: [
@@ -132,9 +129,7 @@ async function init() {
     });
 
     sellerView = buildSellerView({
-      summaries: {
-        shipment: sellerSummary({ sellerRows: sellerResult.rows })
-      },
+      summaries: {},
       reportRows: sellerResult.rows,
       filters: {
         fcList: [...new Set(sellerResult.rows.map(r => r.fc))]
@@ -227,7 +222,7 @@ function renderTab() {
     renderSummaryTable({
       title: "FC Wise Stock",
       columns: ["FC", "Total Stock"],
-      rows: fcStockSummary(rows, activeTab),
+      rows: fcStockSummary(fcStockGlobal, activeTab),
       showGrandTotal: true
     })
   );
@@ -236,7 +231,7 @@ function renderTab() {
     renderSummaryTable({
       title: "FC Wise Sale | DRR | Stock Cover",
       columns: ["FC", "Total Sale", "DRR", "Stock Cover"],
-      rows: fcSaleSummary(rows),
+      rows: fcSaleSummary(rows, fcStockGlobal, activeTab),
       showGrandTotal: true
     })
   );
