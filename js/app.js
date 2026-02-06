@@ -1,9 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.0 — UNIFIED DEMAND + ALLOCATION ENGINE
- *
- * VA3 planners untouched (frozen)
- * VA4 engine ACTIVE
+ * VA4.1 — CONSOLIDATED + ENRICHED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -16,13 +13,15 @@ import {
   normalizeCompanyRemarks
 } from "./ingest/normalize.js";
 
-/* VA3 — DERIVATION ONLY */
+/* DERIVATION */
 import { deriveSellerSales } from "./domain/seller/sellerDerivation.js";
 
 /* VA4 ENGINE */
 import { buildDemandUniverse } from "./domain/va4/buildDemandUniverse.js";
+import { consolidateDemandRows } from "./domain/va4/consolidateDemandRows.js";
 import { applyAllocation } from "./domain/va4/applyAllocation.js";
 import { distributeToFC } from "./domain/va4/distributeToFC.js";
+import { enrichMpRows } from "./domain/va4/enrichMpRows.js";
 
 /* SUMMARIES */
 import { fcStockSummary } from "./summaries/fcStockSummary.js";
@@ -44,31 +43,22 @@ import { renderPageShell } from "./ui/layout/pageShell.js";
 import { renderSummaryTable } from "./ui/render/summaryTables.js";
 import { renderReportTable } from "./ui/render/reportTable.js";
 
-/* =============================
-   BOOTSTRAP
-============================= */
+/* ============================= */
 
 const app = document.getElementById("app");
 app.innerHTML = "";
-
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
 const tabsContainer = document.createElement("div");
 const content = document.createElement("div");
-
 app.appendChild(tabsContainer);
 app.appendChild(content);
-
-/* =============================
-   INIT
-============================= */
 
 init();
 
 async function init() {
   try {
-    /* 1️⃣ LOAD */
     const [saleCSV, fcCSV, uniCSV, remarksCSV] =
       await Promise.all([
         loadCSV(SOURCES.sale30D),
@@ -77,106 +67,60 @@ async function init() {
         loadCSV(SOURCES.companyRemarks)
       ]);
 
-    /* 2️⃣ PARSE */
-    const saleRows = parseCSV(saleCSV);
-    const fcRows = parseCSV(fcCSV);
-    const uniRows = parseCSV(uniCSV);
-    const remarksRows = parseCSV(remarksCSV);
+    const sale30D = normalizeSale30D(parseCSV(saleCSV));
+    const fcStock = normalizeFCStock(parseCSV(fcCSV));
+    const uniwareStock = normalizeUniwareStock(parseCSV(uniCSV));
+    const companyRemarks = normalizeCompanyRemarks(parseCSV(remarksCSV));
 
-    /* 3️⃣ NORMALIZE */
-    const sale30D = normalizeSale30D(saleRows);
-    const fcStock = normalizeFCStock(fcRows);
-    const uniwareStock = normalizeUniwareStock(uniRows);
-    const companyRemarks = normalizeCompanyRemarks(remarksRows);
-
-    /* 4️⃣ DERIVE SELLER */
     const { mpSales, sellerSales } = deriveSellerSales({
       sale30D,
       fcStock
     });
 
-    /* =============================
-       VA4 ENGINE
-    ============================= */
-
-    /* Phase A — Demand + DW */
-    const demandRows = buildDemandUniverse({
-      mpSales,
-      sellerSales
+    /* VA4 PIPELINE */
+    const demand = buildDemandUniverse({ mpSales, sellerSales });
+    const consolidated = consolidateDemandRows(demand);
+    const allocated = applyAllocation({ demandRows: consolidated, uniwareStock });
+    const distributed = distributeToFC({
+      allocatedRows: allocated,
+      fallbackFCsByMP: {
+        AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
+        FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
+        MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"],
+        SELLER: []
+      }
     });
 
-    /* Phase B — 40% Allocation */
-    const allocatedRows = applyAllocation({
-      demandRows,
-      uniwareStock
+    const finalRows = enrichMpRows({
+      rows: distributed,
+      fcStock,
+      companyRemarks
     });
 
-    /* Phase C — FC Distribution */
-    const fallbackFCsByMP = {
-      AMAZON: ["BLR8", "HYD3", "BOM5", "CJB1", "DEL5"],
-      FLIPKART: ["MALUR", "KOLKATA", "SANPKA", "HYDERABAD", "BHIWANDI"],
-      MYNTRA: ["Bangalore", "Mumbai", "Bilaspur"],
-      SELLER: []
-    };
-
-    const finalRows = distributeToFC({
-      allocatedRows,
-      fallbackFCsByMP
-    });
-
-    /* =============================
-       BUILD MP VIEWS
-    ============================= */
-
-    const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
+    /* BUILD VIEWS */
     const mpViews = {};
-
-    MPs.forEach(mp => {
-      const mpRows = finalRows.filter(r => r.mp === mp);
-
+    ["AMAZON", "FLIPKART", "MYNTRA"].forEach(mp => {
+      const rows = finalRows.filter(r => r.mp === mp);
       mpViews[mp] = buildMpView({
         mp,
         summaries: {
           fcStock: fcStockSummary(fcStock, mp),
-          fcSale: fcSaleSummary(mpRows, fcStock, mp),
-          topSkus: mpTopSkuSummary(mpRows),
-          topStyles: mpTopStyleSummary(mpRows),
-          shipment: shipmentSummary(mpRows)
+          fcSale: fcSaleSummary(rows, fcStock, mp),
+          topSkus: mpTopSkuSummary(rows),
+          topStyles: mpTopStyleSummary(rows),
+          shipment: shipmentSummary(rows)
         },
-        reportRows: mpRows,
-        filters: {
-          fcList: [
-            ...new Set(
-              mpRows
-                .map(r => r.fc)
-                .filter(Boolean)
-            )
-          ]
-        }
+        reportRows: rows,
+        filters: { fcList: [...new Set(rows.map(r => r.fc))] }
       });
     });
 
-    /* =============================
-       SELLER VIEW
-    ============================= */
-
     const sellerRows = finalRows.filter(r => r.mp === "SELLER");
-
     const sellerView = buildSellerView({
-      summaries: {
-        shipment: sellerSummary({
-          sellerRows
-        })
-      },
+      summaries: { shipment: sellerSummary({ sellerRows }) },
       reportRows: sellerRows,
-      filters: {
-        fcList: [...new Set(sellerRows.map(r => r.fc))]
-      }
+      filters: { fcList: [...new Set(sellerRows.map(r => r.fc))] }
     });
-
-    /* =============================
-       TABS
-    ============================= */
 
     tabsContainer.appendChild(
       renderTabs(tab => renderTab(tab, mpViews, sellerView))
@@ -191,14 +135,11 @@ async function init() {
   }
 }
 
-/* =============================
-   TAB RENDERING
-============================= */
+/* ============================= */
 
 function renderTab(tab, mpViews, sellerView) {
   content.innerHTML = "";
 
-  /* SELLER TAB */
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
     const sections = page.querySelectorAll(".section");
@@ -223,61 +164,50 @@ function renderTab(tab, mpViews, sellerView) {
     return;
   }
 
-  /* MP TAB */
   const view = mpViews[tab];
   const page = renderPageShell(tab);
   const sections = page.querySelectorAll(".section");
 
-  sections[0].replaceWith(
-    renderSummaryTable({
-      title: "FC Wise Stock",
-      columns: ["FC", "Total Stock"],
-      rows: view.summaries.fcStock,
-      showGrandTotal: true
-    })
-  );
+  sections[0].replaceWith(renderSummaryTable({
+    title: "FC Wise Stock",
+    columns: ["FC", "Total Stock"],
+    rows: view.summaries.fcStock,
+    showGrandTotal: true
+  }));
 
-  sections[1].replaceWith(
-    renderSummaryTable({
-      title: "FC Wise Sale | DRR | Stock Cover",
-      columns: ["FC", "Total Sale", "DRR", "Stock Cover"],
-      rows: view.summaries.fcSale,
-      showGrandTotal: true
-    })
-  );
+  sections[1].replaceWith(renderSummaryTable({
+    title: "FC Wise Sale | DRR | Stock Cover",
+    columns: ["FC", "Total Sale", "DRR", "Stock Cover"],
+    rows: view.summaries.fcSale,
+    showGrandTotal: true
+  }));
 
-  sections[2].replaceWith(
-    renderSummaryTable({
-      title: "MP Wise Top 10 SKUs",
-      columns: ["SKU", "Total Sale", "DRR"],
-      rows: view.summaries.topSkus
-    })
-  );
+  sections[2].replaceWith(renderSummaryTable({
+    title: "MP Wise Top 10 SKUs",
+    columns: ["SKU", "Total Sale", "DRR"],
+    rows: view.summaries.topSkus
+  }));
 
-  sections[3].replaceWith(
-    renderSummaryTable({
-      title: "MP Wise Top 10 Styles",
-      columns: ["Style", "Total Sale", "DRR"],
-      rows: view.summaries.topStyles
-    })
-  );
+  sections[3].replaceWith(renderSummaryTable({
+    title: "MP Wise Top 10 Styles",
+    columns: ["Style", "Total Sale", "DRR"],
+    rows: view.summaries.topStyles
+  }));
 
-  sections[4].replaceWith(
-    renderSummaryTable({
-      title: "Shipment & Recall Summary",
-      columns: [
-        "FC",
-        "Total Stock",
-        "Total Sale",
-        "DRR",
-        "Actual Shipment Qty",
-        "Shipment Qty",
-        "Recall Qty"
-      ],
-      rows: view.summaries.shipment,
-      showGrandTotal: true
-    })
-  );
+  sections[4].replaceWith(renderSummaryTable({
+    title: "Shipment & Recall Summary",
+    columns: [
+      "FC",
+      "Total Stock",
+      "Total Sale",
+      "DRR",
+      "Actual Shipment Qty",
+      "Shipment Qty",
+      "Recall Qty"
+    ],
+    rows: view.summaries.shipment,
+    showGrandTotal: true
+  }));
 
   sections[5].replaceWith(
     renderReportTable({
