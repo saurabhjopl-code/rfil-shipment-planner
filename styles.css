@@ -13,14 +13,11 @@ body {
 }
 
 /* =========================
-   HEADER
+   APP HEADER
 ========================= */
 .app-header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
   background: #ffffff;
-  border-bottom: 2px solid #e5e7eb;
+  border-bottom: 1px solid #d1d5db;
   padding: 10px 24px;
   display: flex;
   align-items: center;
@@ -37,9 +34,13 @@ body {
 }
 
 /* =========================
-   FILTER BAR
+   STICKY CONTROL BAR
+   (Filters + Tabs)
 ========================= */
 .filters-bar {
+  position: sticky;
+  top: 60px; /* below header */
+  z-index: 90;
   background: #ffffff;
   padding: 12px 24px;
   display: flex;
@@ -48,19 +49,20 @@ body {
   border-bottom: 1px solid #d1d5db;
 }
 
-/* =========================
-   TABS
-========================= */
+/* Tabs row */
 .tabs {
+  position: sticky;
+  top: 112px; /* header + filters */
+  z-index: 89;
   display: flex;
   gap: 24px;
-  padding: 12px 24px;
+  padding: 10px 24px;
   background: #ffffff;
-  border-bottom: 1px solid #d1d5db;
+  border-bottom: 2px solid #d1d5db;
 }
 
 .tab {
-  padding-bottom: 8px;
+  padding-bottom: 6px;
   font-size: 14px;
   color: #6b7280;
   cursor: pointer;
@@ -73,19 +75,43 @@ body {
 }
 
 /* =========================
-   PAGE
+   PAGE GRID (STRICT)
 ========================= */
 .page {
   padding: 20px 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* Row 1 */
+.section:nth-child(1),
+.section:nth-child(2) {
+  grid-column: span 1;
+}
+
+/* Row 2 */
+.section:nth-child(3),
+.section:nth-child(4) {
+  grid-column: span 1;
+}
+
+/* Shipment summary */
+.section:nth-child(5) {
+  grid-column: span 2;
+}
+
+/* Report table */
+.section:nth-child(6) {
+  grid-column: span 2;
 }
 
 /* =========================
-   SECTION BLOCKS (IMPORTANT)
+   SECTION BLOCK
 ========================= */
 .section {
   background: #ffffff;
   border: 1px solid #d1d5db;
-  margin-bottom: 20px;
   padding: 12px 16px;
 }
 
@@ -96,7 +122,7 @@ body {
 }
 
 /* =========================
-   TABLES – DATA FIRST
+   TABLES
 ========================= */
 table {
   width: 100%;
@@ -133,7 +159,7 @@ tfoot td {
 }
 
 /* =========================
-   ACTION
+   ACTION BADGES
 ========================= */
 .badge {
   padding: 3px 10px;
@@ -164,4 +190,22 @@ tfoot td {
   font-size: 11px;
   color: #374151;
   line-height: 1.3;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 1100px) {
+  .page {
+    grid-template-columns: 1fr;
+  }
+
+  .section {
+    grid-column: span 1 !important;
+  }
+
+  .filters-bar,
+  .tabs {
+    position: static;
+  }
 }
