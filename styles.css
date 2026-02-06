@@ -179,3 +179,119 @@ tbody td {
   background: #fff3cd;
   color: #856404;
 }
+
+/* =====================================================
+   VA4.3 – UI POLISH (SAFE LAYER)
+   - No layout changes
+   - No JS dependency
+   - Fully reversible
+===================================================== */
+
+/* ---------- APP CANVAS ---------- */
+body {
+  background: #f3f5f7;
+}
+
+/* ---------- HEADER POLISH ---------- */
+.app-header {
+  height: 56px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+}
+
+.app-header img {
+  height: 32px;
+}
+
+.app-header .title {
+  font-size: 18px;
+  color: #111827;
+}
+
+/* ---------- FILTER BAR ---------- */
+.filter-bar {
+  gap: 14px;
+}
+
+.filter-bar select,
+.filter-bar input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+.filter-bar select:focus,
+.filter-bar input:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+/* ---------- TABS ---------- */
+.tabs {
+  padding: 0 16px;
+  gap: 12px;
+}
+
+.tab {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.tab.active {
+  color: #111827;
+}
+
+/* ---------- SECTION CARDS ---------- */
+.section {
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* ---------- SECTION TITLES ---------- */
+.section h3 {
+  margin: 4px 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 6px;
+}
+
+/* ---------- TABLE POLISH ---------- */
+table {
+  font-size: 13px;
+}
+
+thead th {
+  background: #f9fafb;
+  color: #374151;
+  font-weight: 600;
+}
+
+tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+tbody tr:hover {
+  background: #eef2ff;
+}
+
+/* ---------- ACTION BADGES ---------- */
+.badge {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* ---------- EMPTY STATES ---------- */
+.empty-state {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* ---------- SCROLL CONTAINERS ---------- */
+.table-container {
+  border-radius: 6px;
+}
