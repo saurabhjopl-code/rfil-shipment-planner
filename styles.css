@@ -227,3 +227,75 @@ tfoot td {
     position: static;
   }
 }
+
+
+/* =========================
+   PAGE LAYOUT (FIXED)
+========================= */
+
+.page {
+  padding: 16px 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* Row 1: summaries */
+.page .section:nth-of-type(1),
+.page .section:nth-of-type(2) {
+  grid-column: span 1;
+}
+
+/* Row 2: top SKUs / styles */
+.page .section:nth-of-type(3),
+.page .section:nth-of-type(4) {
+  grid-column: span 1;
+}
+
+/* Row 3: shipment summary */
+.page .section:nth-of-type(5) {
+  grid-column: span 2;
+}
+
+/* Row 4: report */
+.page .section:nth-of-type(6) {
+  grid-column: span 2;
+}
+
+/* =========================
+   TABLE VISUAL CLARITY
+========================= */
+
+.section {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.section h3 {
+  margin-bottom: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead th {
+  background: #f9fafb;
+  border-bottom: 2px solid #d1d5db;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+tbody tr:hover {
+  background: #eef2ff;
+}
