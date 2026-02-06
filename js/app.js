@@ -1,6 +1,6 @@
 /**
  * APP ORCHESTRATOR
- * VA4.3 — FILTER SAFE FIX
+ * VA4.2 — SHIPMENT CEILING FIXED
  */
 
 import { SOURCES } from "./ingest/sources.js";
@@ -46,21 +46,11 @@ import { renderReportTable } from "./ui/render/reportTable.js";
 const app = document.getElementById("app");
 app.innerHTML = "";
 
+/* HEADER + FILTERS */
 app.appendChild(renderAppHeader());
 app.appendChild(renderFiltersBar());
 
-const tabsContainer = document.createElement("div");
-const content = document.createElement("div");
-
-app.appendChild(tabsContainer);
-app.appendChild(content);
-
-let mpViews = {};
-let sellerView = null;
-
-/* =============================
-   INIT
-============================= */
+let currentPage = null;
 
 init();
 
@@ -90,6 +80,7 @@ async function init() {
     });
 
     const MPs = ["AMAZON", "FLIPKART", "MYNTRA"];
+    const mpViews = {};
     const allMpPlanningRows = [];
 
     MPs.forEach(mp => {
@@ -113,7 +104,16 @@ async function init() {
           topStyles: mpTopStyleSummary(fixedRows),
           shipment: shipmentSummary(fixedRows)
         },
-        reportRows: fixedRows
+        reportRows: fixedRows,
+        filters: {
+          fcList: [
+            ...new Set(
+              fcStock
+                .filter(r => r.mp === mp)
+                .map(r => r.warehouseId)
+            )
+          ]
+        }
       });
     });
 
@@ -129,22 +129,28 @@ async function init() {
       }
     });
 
-    sellerView = buildSellerView({
+    const sellerView = buildSellerView({
       summaries: {
-        shipment: sellerSummary({ sellerRows: sellerResult.rows })
+        shipment: sellerSummary({
+          sellerRows: sellerResult.rows
+        })
       },
-      reportRows: sellerResult.rows
+      reportRows: sellerResult.rows,
+      filters: {
+        fcList: [...new Set(sellerResult.rows.map(r => r.fc))]
+      }
     });
 
-    tabsContainer.appendChild(
-      renderTabs(tab => renderTab(tab))
+    /* TABS — DIRECT CHILD OF APP (FIX) */
+    app.appendChild(
+      renderTabs(tab => renderTab(tab, mpViews, sellerView))
     );
 
-    renderTab("AMAZON");
+    renderTab("AMAZON", mpViews, sellerView);
 
   } catch (e) {
     console.error(e);
-    content.innerHTML =
+    app.innerHTML +=
       `<div style="padding:16px;color:red">Failed to load app. Check console.</div>`;
   }
 }
@@ -153,8 +159,8 @@ async function init() {
    TAB RENDERING
 ============================= */
 
-function renderTab(tab) {
-  content.innerHTML = "";
+function renderTab(tab, mpViews, sellerView) {
+  if (currentPage) currentPage.remove();
 
   if (tab === "SELLER") {
     const page = renderPageShell("SELLER");
@@ -176,7 +182,8 @@ function renderTab(tab) {
       })
     );
 
-    content.appendChild(page);
+    currentPage = page;
+    app.appendChild(page);
     return;
   }
 
@@ -242,5 +249,6 @@ function renderTab(tab) {
     })
   );
 
-  content.appendChild(page);
+  currentPage = page;
+  app.appendChild(page);
 }
